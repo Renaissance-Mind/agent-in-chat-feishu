@@ -29,6 +29,7 @@ func TestFeishuPermissionURLIncludesRequiredScopes(t *testing.T) {
 		"im:message.group_at_msg:readonly",
 		"im:message.group_msg",
 		"im:message:send_as_bot",
+		"im:message.reactions:write_only",
 		"im:chat.members:read",
 		"contact:user.base:readonly",
 	} {

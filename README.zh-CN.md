@@ -27,6 +27,7 @@
 - 💬 **原生聊天循环** — Codex 响应真实群聊里的 @，而不是另起一个机器人工作流。
 - 🕰️ **触发时查询历史** — 每次被 @ 时从飞书 IM 历史接口拉取最近消息。
 - 👥 **显示人名** — 本地缓存 user、bot、app 的名称映射，减少 `ou_...` 这类 ID。
+- ✅ **处理中表情** — Codex 工作时给触发消息加 `OnIt`，完成后移除。
 - 🧹 **过滤进度卡片** — 默认忽略 interactive card，只保留正常文本回复。
 - 🧵 **每群一个 Codex 线程** — 不同飞书群会续不同的 Codex conversation。
 - 🔐 **可选群白名单** — 可以限制只响应指定 `oc_...` 群。
@@ -86,7 +87,7 @@ agentchat auth-url
 
 `setup` 会把 `app_id` 和 `app_secret` 写入 `~/.agentchat/config.toml`，并创建本地数据目录。然后打开 setup 或 `agentchat auth-url` 打印出来的权限直达链接，确认开通所需 scopes；如果飞书要求发布版本或管理员审批，还需要按页面提示完成。
 
-内置权限集合覆盖群聊 @ 事件、群聊历史消息、机器人回复、群成员名称映射、机器人 / App 名称映射和卡片资源。setup 之后还需要确认应用已经通过 WebSocket 订阅 `im.message.receive_v1` 事件。
+内置权限集合覆盖群聊 @ 事件、群聊历史消息、机器人回复、消息表情回复、群成员名称映射、机器人 / App 名称映射和卡片资源。setup 之后还需要确认应用已经通过 WebSocket 订阅 `im.message.receive_v1` 事件。
 
 ## 配置
 
@@ -100,6 +101,8 @@ app_id = "cli_xxx"
 app_secret = "xxx"
 base_url = "https://open.feishu.cn"
 allowed_chats = []
+reaction_emoji = "OnIt"
+done_emoji = "none"
 
 [agent]
 command = "codex"
@@ -116,10 +119,13 @@ max_age_mins = 1440
 
 - 接收 IM 消息事件
 - 以机器人身份发送 / 回复消息
+- 添加 / 删除消息表情回复
 - 读取群聊消息历史
 - 读取群成员列表
 
 读取群成员权限是显示 `小林` 这类名字，而不是 `ou_...` ID 的关键。
+
+`reaction_emoji` 会在 Codex 执行时添加到触发消息上，并在完成前移除；设为 `"none"` 可以关闭处理中表情。如果希望成功回复后再加一个完成表情，可以设置 `done_emoji = "Done"`。
 
 ## 使用
 
@@ -142,7 +148,8 @@ agentchat run -config ~/.agentchat/config.toml
 3. 从飞书拉取最近群聊历史。
 4. 从上下文中过滤 interactive 进度卡片。
 5. 续上这个群对应的 Codex thread，首次使用则新建。
-6. 把 Codex 的最终回答回复到触发消息下面。
+6. 在执行前后添加 / 移除飞书表情回复。
+7. 把 Codex 的最终回答回复到触发消息下面。
 
 ## 本地数据
 

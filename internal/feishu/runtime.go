@@ -193,6 +193,13 @@ func (r *Runtime) processMessage(ctx context.Context, msg inboundMessage) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	reactionID := r.addReaction(msg.messageID, r.cfg.Feishu.ReactionEmoji)
+	defer func() {
+		if reactionID != "" {
+			r.removeReaction(msg.messageID, reactionID)
+		}
+	}()
+
 	if err := r.api.RefreshIdentities(ctx, msg.chatID, r.identity); err != nil {
 		slog.Warn("identity refresh failed", "chat_id", msg.chatID, "error", err)
 	}
@@ -226,6 +233,37 @@ func (r *Runtime) processMessage(ctx context.Context, msg inboundMessage) {
 	}
 	if err := r.api.ReplyText(ctx, msg.messageID, compactForReply(reply, 30000)); err != nil {
 		slog.Error("feishu reply failed", "chat_id", msg.chatID, "message_id", msg.messageID, "error", err)
+		return
+	}
+	if reactionID != "" {
+		r.removeReaction(msg.messageID, reactionID)
+		reactionID = ""
+	}
+	r.addReaction(msg.messageID, r.cfg.Feishu.DoneEmoji)
+}
+
+func (r *Runtime) addReaction(messageID, emojiType string) string {
+	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(emojiType) == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	reactionID, err := r.api.CreateReaction(ctx, messageID, emojiType)
+	if err != nil {
+		slog.Debug("feishu add reaction failed", "message_id", messageID, "emoji", emojiType, "error", err)
+		return ""
+	}
+	return reactionID
+}
+
+func (r *Runtime) removeReaction(messageID, reactionID string) {
+	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(reactionID) == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := r.api.DeleteReaction(ctx, messageID, reactionID); err != nil {
+		slog.Debug("feishu remove reaction failed", "message_id", messageID, "reaction_id", reactionID, "error", err)
 	}
 }
 

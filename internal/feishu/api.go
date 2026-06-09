@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +21,7 @@ import (
 )
 
 const maxFeishuPageSize = 50
+const maxRequestAttempts = 3
 
 type API struct {
 	appID     string
@@ -223,6 +228,54 @@ func (a *API) ReplyText(ctx context.Context, messageID, text string) error {
 	return nil
 }
 
+func (a *API) CreateReaction(ctx context.Context, messageID, emojiType string) (string, error) {
+	messageID = strings.TrimSpace(messageID)
+	emojiType = strings.TrimSpace(emojiType)
+	if messageID == "" || emojiType == "" {
+		return "", nil
+	}
+	body := map[string]any{
+		"reaction_type": map[string]string{
+			"emoji_type": emojiType,
+		},
+	}
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			ReactionID string `json:"reaction_id"`
+		} `json:"data"`
+	}
+	path := fmt.Sprintf("/open-apis/im/v1/messages/%s/reactions", url.PathEscape(messageID))
+	if err := a.post(ctx, path, body, &resp); err != nil {
+		return "", err
+	}
+	if resp.Code != 0 {
+		return "", fmt.Errorf("create reaction code=%d msg=%s", resp.Code, resp.Msg)
+	}
+	return strings.TrimSpace(resp.Data.ReactionID), nil
+}
+
+func (a *API) DeleteReaction(ctx context.Context, messageID, reactionID string) error {
+	messageID = strings.TrimSpace(messageID)
+	reactionID = strings.TrimSpace(reactionID)
+	if messageID == "" || reactionID == "" {
+		return nil
+	}
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	path := fmt.Sprintf("/open-apis/im/v1/messages/%s/reactions/%s", url.PathEscape(messageID), url.PathEscape(reactionID))
+	if err := a.delete(ctx, path, &resp); err != nil {
+		return err
+	}
+	if resp.Code != 0 {
+		return fmt.Errorf("delete reaction code=%d msg=%s", resp.Code, resp.Msg)
+	}
+	return nil
+}
+
 func (a *API) tenantToken(ctx context.Context) (string, error) {
 	a.mu.Lock()
 	if a.token != "" && time.Now().Before(a.tokenExp) {
@@ -258,35 +311,67 @@ func (a *API) tenantToken(ctx context.Context) (string, error) {
 }
 
 func (a *API) get(ctx context.Context, path string, params url.Values, out any) error {
-	token, err := a.tenantToken(ctx)
-	if err != nil {
-		return err
+	return a.authedRequest(ctx, http.MethodGet, path, params, nil, out)
+}
+
+func (a *API) post(ctx context.Context, path string, body any, out any) error {
+	return a.authedRequest(ctx, http.MethodPost, path, nil, body, out)
+}
+
+func (a *API) delete(ctx context.Context, path string, out any) error {
+	return a.authedRequest(ctx, http.MethodDelete, path, nil, nil, out)
+}
+
+func (a *API) authedRequest(ctx context.Context, method, path string, params url.Values, body any, out any) error {
+	var lastErr error
+	for attempt := 0; attempt < maxRequestAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		token, err := a.tenantToken(ctx)
+		if err != nil {
+			return err
+		}
+		req, err := a.newRequest(ctx, method, path, params, body)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		if err := a.do(req, out); err != nil {
+			lastErr = err
+			if isTransientError(err) && attempt < maxRequestAttempts-1 {
+				time.Sleep(requestBackoff(attempt))
+				continue
+			}
+			return err
+		}
+		if code, ok := responseCode(out); ok && isTenantTokenInvalidCode(code) && attempt < maxRequestAttempts-1 {
+			a.clearToken()
+			continue
+		}
+		return nil
 	}
+	return lastErr
+}
+
+func (a *API) newRequest(ctx context.Context, method, path string, params url.Values, body any) (*http.Request, error) {
 	u := a.baseURL + path
 	if len(params) > 0 {
 		u += "?" + params.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return err
+	var reader io.Reader
+	if body != nil {
+		data, _ := json.Marshal(body)
+		reader = bytes.NewReader(data)
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	return a.do(req, out)
-}
-
-func (a *API) post(ctx context.Context, path string, body any, out any) error {
-	token, err := a.tenantToken(ctx)
+	req, err := http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	data, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.baseURL+path, bytes.NewReader(data))
-	if err != nil {
-		return err
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	return a.do(req, out)
+	return req, nil
 }
 
 func (a *API) postNoAuth(ctx context.Context, path string, body any, out any) error {
@@ -306,9 +391,68 @@ func (a *API) do(req *http.Request, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%s %s: http %d", req.Method, req.URL.Path, resp.StatusCode)
+		return statusError{method: req.Method, path: req.URL.Path, status: resp.StatusCode}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (a *API) clearToken() {
+	a.mu.Lock()
+	a.token = ""
+	a.tokenExp = time.Time{}
+	a.mu.Unlock()
+}
+
+func responseCode(out any) (int, bool) {
+	if out == nil {
+		return 0, false
+	}
+	value := reflect.ValueOf(out)
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return 0, false
+	}
+	value = value.Elem()
+	if value.Kind() != reflect.Struct {
+		return 0, false
+	}
+	field := value.FieldByName("Code")
+	if !field.IsValid() || field.Kind() != reflect.Int {
+		return 0, false
+	}
+	return int(field.Int()), true
+}
+
+func isTenantTokenInvalidCode(code int) bool {
+	return code == 99991663
+}
+
+type statusError struct {
+	method string
+	path   string
+	status int
+}
+
+func (e statusError) Error() string {
+	return fmt.Sprintf("%s %s: http %d", e.method, e.path, e.status)
+}
+
+func isTransientError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var status statusError
+	if errors.As(err, &status) {
+		return status.status == http.StatusTooManyRequests || status.status >= 500
+	}
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func requestBackoff(attempt int) time.Duration {
+	return time.Duration(attempt+1) * 200 * time.Millisecond
 }
 
 type messageListResponse struct {

@@ -18,10 +18,12 @@ type Config struct {
 }
 
 type FeishuConfig struct {
-	AppID        string   `toml:"app_id"`
-	AppSecret    string   `toml:"app_secret"`
-	AllowedChats []string `toml:"allowed_chats"`
-	BaseURL      string   `toml:"base_url"`
+	AppID         string   `toml:"app_id"`
+	AppSecret     string   `toml:"app_secret"`
+	AllowedChats  []string `toml:"allowed_chats"`
+	BaseURL       string   `toml:"base_url"`
+	ReactionEmoji string   `toml:"reaction_emoji"`
+	DoneEmoji     string   `toml:"done_emoji"`
 }
 
 type AgentConfig struct {
@@ -61,6 +63,8 @@ func (c *Config) ApplyDefaults() {
 	if c.Feishu.BaseURL == "" {
 		c.Feishu.BaseURL = "https://open.feishu.cn"
 	}
+	c.Feishu.ReactionEmoji = normalizeEmoji(c.Feishu.ReactionEmoji, "OnIt")
+	c.Feishu.DoneEmoji = normalizeEmoji(c.Feishu.DoneEmoji, "")
 	if c.Agent.Command == "" {
 		c.Agent.Command = "codex"
 	}
@@ -76,6 +80,17 @@ func (c *Config) ApplyDefaults() {
 	c.DataDir = expandHome(c.DataDir)
 	c.Agent.WorkDir = expandHome(c.Agent.WorkDir)
 	c.Agent.CodexHome = expandHome(c.Agent.CodexHome)
+}
+
+func normalizeEmoji(value, defaultValue string) string {
+	value = strings.TrimSpace(value)
+	if strings.EqualFold(value, "none") {
+		return ""
+	}
+	if value == "" {
+		return defaultValue
+	}
+	return value
 }
 
 func (c Config) Validate() error {

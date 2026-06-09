@@ -27,6 +27,7 @@ It was extracted from the Feishu pieces needed around `cc-connect`, then simplif
 - 💬 **Chat-native Codex loop** — Codex reacts to real group mentions and replies in-thread.
 - 🕰️ **Trigger-time history** — recent Feishu group messages are fetched when the mention happens.
 - 👥 **Readable names** — user, bot, and app IDs are cached locally as display names.
+- ✅ **Processing reactions** — add an `OnIt` reaction while Codex is working, then remove it.
 - 🧹 **Progress-card filtering** — interactive card messages are ignored; normal replies remain visible.
 - 🧵 **One Codex thread per chat** — each Feishu group resumes its own Codex conversation.
 - 🔐 **Optional chat whitelist** — restrict the bot to selected `oc_...` group IDs.
@@ -86,7 +87,7 @@ agentchat auth-url
 
 The setup command writes `app_id` and `app_secret` into `~/.agentchat/config.toml` and creates the local data directories. Then open the permissions link printed by setup or `agentchat auth-url`, confirm the requested scopes, and publish or approve the app if Feishu asks.
 
-The built-in permission set covers group mentions, group message history, bot replies, member-name lookup, bot/app lookup, and card resources. After setup, also verify that the app subscribes to `im.message.receive_v1` through WebSocket events.
+The built-in permission set covers group mentions, group message history, bot replies, message reactions, member-name lookup, bot/app lookup, and card resources. After setup, also verify that the app subscribes to `im.message.receive_v1` through WebSocket events.
 
 ## Configuration
 
@@ -100,6 +101,8 @@ app_id = "cli_xxx"
 app_secret = "xxx"
 base_url = "https://open.feishu.cn"
 allowed_chats = []
+reaction_emoji = "OnIt"
+done_emoji = "none"
 
 [agent]
 command = "codex"
@@ -116,10 +119,13 @@ Recommended Feishu capabilities:
 
 - Receive IM message events
 - Send and reply to messages as bot
+- Add and remove message reactions
 - Read group message history
 - Read group members
 
 The member-read capability is what lets the context say `Maya` instead of `ou_...`.
+
+`reaction_emoji` is added to the triggering message while Codex runs, then removed before the final reply is marked complete. Set it to `"none"` to disable processing reactions. Set `done_emoji = "Done"` if you also want a completion reaction after a successful reply.
 
 ## Usage
 
@@ -142,7 +148,8 @@ The tool will:
 3. Fetch recent group history from Feishu.
 4. Remove interactive progress cards from the context.
 5. Resume the chat's Codex thread, or create one on first use.
-6. Reply to the triggering message with Codex's final answer.
+6. Add and remove Feishu reactions around the run.
+7. Reply to the triggering message with Codex's final answer.
 
 ## Data Stored Locally
 

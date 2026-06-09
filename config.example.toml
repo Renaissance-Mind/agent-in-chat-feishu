@@ -5,6 +5,8 @@ app_id = "cli_xxx"
 app_secret = "xxx"
 base_url = "https://open.feishu.cn"
 allowed_chats = []
+reaction_emoji = "OnIt"
+done_emoji = "none"
 
 [agent]
 command = "codex"
