@@ -391,7 +391,8 @@ func (a *API) do(req *http.Request, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return statusError{method: req.Method, path: req.URL.Path, status: resp.StatusCode}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return statusError{method: req.Method, path: req.URL.Path, status: resp.StatusCode, body: strings.TrimSpace(string(body))}
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
@@ -430,10 +431,14 @@ type statusError struct {
 	method string
 	path   string
 	status int
+	body   string
 }
 
 func (e statusError) Error() string {
-	return fmt.Sprintf("%s %s: http %d", e.method, e.path, e.status)
+	if e.body == "" {
+		return fmt.Sprintf("%s %s: http %d", e.method, e.path, e.status)
+	}
+	return fmt.Sprintf("%s %s: http %d body=%s", e.method, e.path, e.status, e.body)
 }
 
 func isTransientError(err error) bool {

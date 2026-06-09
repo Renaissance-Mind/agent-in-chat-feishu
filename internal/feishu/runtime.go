@@ -92,10 +92,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 	if err := r.initialize(ctx); err != nil {
 		return err
 	}
-	eventHandler := dispatcher.NewEventDispatcher("", "").
-		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-			return r.onMessage(ctx, event)
-		})
+	eventHandler := newEventDispatcher(r)
 
 	opts := []larkws.ClientOption{
 		larkws.WithEventHandler(eventHandler),
@@ -107,6 +104,19 @@ func (r *Runtime) Start(ctx context.Context) error {
 	client := larkws.NewClient(r.cfg.Feishu.AppID, r.cfg.Feishu.AppSecret, opts...)
 	slog.Info("feishu websocket starting")
 	return client.Start(ctx)
+}
+
+func newEventDispatcher(r *Runtime) *dispatcher.EventDispatcher {
+	return dispatcher.NewEventDispatcher("", "").
+		OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+			return r.onMessage(ctx, event)
+		}).
+		OnP2MessageReactionCreatedV1(func(context.Context, *larkim.P2MessageReactionCreatedV1) error {
+			return nil
+		}).
+		OnP2MessageReactionDeletedV1(func(context.Context, *larkim.P2MessageReactionDeletedV1) error {
+			return nil
+		})
 }
 
 func (r *Runtime) initialize(ctx context.Context) error {

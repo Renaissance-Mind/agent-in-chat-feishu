@@ -112,6 +112,35 @@ func TestReplyTextRefreshesInvalidTenantToken(t *testing.T) {
 	}
 }
 
+func TestHTTPStatusErrorIncludesResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/open-apis/auth/v3/tenant_access_token/internal":
+			writeJSON(t, w, map[string]any{"code": 0, "tenant_access_token": "token-1", "expire": 3600})
+		case r.URL.Path == "/open-apis/im/v1/chats/oc_bad/members":
+			w.WriteHeader(http.StatusBadRequest)
+			writeJSON(t, w, map[string]any{"code": 232006, "msg": "Your request specifies a chat_id which is invalid."})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	api := NewAPI("cli_test", "sec_test", server.URL)
+	api.client = server.Client()
+
+	_, err := api.FetchMembers(context.Background(), "oc_bad")
+	if err == nil {
+		t.Fatal("FetchMembers() error = nil, want HTTP status error")
+	}
+	got := err.Error()
+	for _, want := range []string{"http 400", "232006", "chat_id"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("error missing %q: %s", want, got)
+		}
+	}
+}
+
 func writeJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	w.Header().Set("Content-Type", "application/json")

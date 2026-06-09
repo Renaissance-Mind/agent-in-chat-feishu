@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -112,6 +113,20 @@ func TestProcessMessageAddsAndRemovesReactions(t *testing.T) {
 	assertBefore(t, got, "reaction:OnIt", "runner")
 	assertBefore(t, got, "reply", "delete:react_OnIt")
 	assertBefore(t, got, "delete:react_OnIt", "reaction:Done")
+}
+
+func TestEventDispatcherIgnoresReactionEvents(t *testing.T) {
+	dispatcher := newEventDispatcher(&Runtime{})
+	value := reflect.ValueOf(dispatcher).Elem().FieldByName("eventType2EventHandler")
+	for _, eventType := range []string{
+		"im.message.receive_v1",
+		"im.message.reaction.created_v1",
+		"im.message.reaction.deleted_v1",
+	} {
+		if !value.MapIndex(reflect.ValueOf(eventType)).IsValid() {
+			t.Fatalf("dispatcher missing handler for %s", eventType)
+		}
+	}
 }
 
 func strPtr(s string) *string {
