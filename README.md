@@ -95,8 +95,9 @@ For background service mode:
 agentchat daemon install --work-dir ~/.agentchat
 ```
 
-If your local agent CLI, Node.js, or `lark-cli` is installed through a custom path
-manager, pass the service PATH explicitly:
+Daemon install captures the current `PATH`, matching cc-connect behavior. If you
+install from a non-interactive shell or use a custom path manager for the agent
+CLI, Node.js, or `lark-cli`, pass the service PATH explicitly:
 
 ```bash
 agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"

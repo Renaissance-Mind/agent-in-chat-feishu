@@ -120,9 +120,9 @@ agentchat daemon status
 agentchat daemon logs
 ```
 
-Daemon install captures the current `PATH` and adds common CLI directories such as
-`/opt/homebrew/bin`, `/usr/local/bin`, and `/opt/local/bin`. If your agent CLI,
-Node.js, or `lark-cli` lives in a custom path manager, pass it explicitly:
+Daemon install captures the current `PATH`, matching cc-connect behavior. If you
+install from a non-interactive shell or your agent CLI, Node.js, or `lark-cli`
+lives in a custom path manager, pass it explicitly:
 
 ```bash
 agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"

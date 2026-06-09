@@ -27,8 +27,9 @@ Install the background service after `setup` has created the config directory:
 agentchat daemon install --work-dir ~/.agentchat
 ```
 
-The service captures the installer process `PATH` and adds common macOS/Linux CLI
-directories. For custom Node or agent managers, pass an explicit value:
+The service captures the installer process `PATH`, matching cc-connect behavior.
+If you install from a non-interactive shell or use custom Node/agent managers,
+pass an explicit value:
 
 ```bash
 agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"

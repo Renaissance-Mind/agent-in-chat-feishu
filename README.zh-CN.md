@@ -95,7 +95,8 @@ agentchat
 agentchat daemon install --work-dir ~/.agentchat
 ```
 
-如果本地 Agent CLI、Node.js 或 `lark-cli` 来自自定义路径管理器，可以显式传入服务 PATH：
+daemon 安装会记录当前 `PATH`，与 cc-connect 行为一致。如果你从非交互 shell
+安装，或本地 Agent CLI、Node.js、`lark-cli` 来自自定义路径管理器，可以显式传入服务 PATH：
 
 ```bash
 agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
