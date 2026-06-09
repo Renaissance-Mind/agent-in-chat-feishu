@@ -64,7 +64,7 @@ agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 ```toml
 [[projects]]
 name = "my-project"
-admin_from = "*"
+admin_from = ""
 reply_footer = false
 inject_sender = true
 show_context_indicator = false

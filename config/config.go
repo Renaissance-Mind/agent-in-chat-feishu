@@ -1435,6 +1435,7 @@ type FeishuCredentialUpdateResult struct {
 	PlatformAbsIndex int // absolute index in projects[i].platforms
 	PlatformType     string
 	AllowFrom        string
+	AdminFrom        string
 }
 
 // EnsureProjectWithFeishuPlatform ensures target project exists. If project does
@@ -1533,6 +1534,7 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 	}
 	lines = append(lines, "[[projects]]")
 	lines = append(lines, fmt.Sprintf("name = %s", quoteTomlString(proj.Name)))
+	lines = append(lines, `admin_from = ""`)
 	lines = append(lines, "reply_footer = false")
 	lines = append(lines, "inject_sender = true")
 	lines = append(lines, "show_context_indicator = false")
@@ -1657,6 +1659,12 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 			platform.Options["allow_from"] = allowFrom
 		}
 	}
+	ownerOpenID := strings.TrimSpace(opts.OwnerOpenID)
+	seedAdminFrom := ownerOpenID != "" && strings.TrimSpace(proj.AdminFrom) == ""
+	adminFrom := strings.TrimSpace(proj.AdminFrom)
+	if seedAdminFrom {
+		adminFrom = ownerOpenID
+	}
 
 	lines, hadTrailing := splitConfigLines(raw)
 	spans := buildRawProjectSpans(lines)
@@ -1702,7 +1710,10 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 	span = reloadSpan()
 	if opts.SetAllowFromEmpty && strings.TrimSpace(opts.OwnerOpenID) != "" {
 		lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "allow_from", allowFrom)
-		span = reloadSpan()
+		_ = reloadSpan()
+	}
+	if seedAdminFrom {
+		lines = upsertProjectStringKey(lines, projectIdx, "admin_from", ownerOpenID)
 	}
 
 	if err := writeRawConfig(joinConfigLines(lines, hadTrailing)); err != nil {
@@ -1715,6 +1726,7 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 		PlatformAbsIndex: absIdx,
 		PlatformType:     platform.Type,
 		AllowFrom:        allowFrom,
+		AdminFrom:        adminFrom,
 	}, nil
 }
 
@@ -1787,6 +1799,22 @@ func mergeAllowFromValue(current, userID string) string {
 		return "*"
 	}
 	return strings.Join(merged, ",")
+}
+
+func upsertProjectStringKey(lines []string, projectIdx int, key, value string) []string {
+	spans := buildRawProjectSpans(lines)
+	if projectIdx < 0 || projectIdx >= len(spans) {
+		return lines
+	}
+	start := spans[projectIdx].start + 1
+	end := spans[projectIdx].end
+	for ln := start; ln <= end && ln < len(lines); ln++ {
+		if isAnyTableHeader(lines[ln]) {
+			end = ln - 1
+			break
+		}
+	}
+	return upsertTomlStringKey(lines, start, end, key, value)
 }
 
 func firstFeishuPlatformIndex(platforms []PlatformConfig) int {

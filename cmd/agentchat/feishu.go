@@ -187,6 +187,12 @@ func runFeishuSetup(args []string, requestedMode string) {
 	if provisionType == "" {
 		provisionType = "feishu"
 	}
+	botOpenID := ""
+	ownerOpenIDForConfig := ownerOpenID
+	if ownerOpenID != "" {
+		botOpenID = fetchBotOpenIDForSetup(resolvedAppID, resolvedAppSecret, provisionType)
+		ownerOpenIDForConfig = setupOwnerOpenIDForConfig(ownerOpenID, botOpenID)
+	}
 	workDir, _ := os.Getwd()
 	provisionResult, err := config.EnsureProjectWithFeishuPlatform(config.EnsureProjectWithFeishuOptions{
 		ProjectName:  targetProject,
@@ -209,7 +215,7 @@ func runFeishuSetup(args []string, requestedMode string) {
 		PlatformType:      finalPlatformType,
 		AppID:             resolvedAppID,
 		AppSecret:         resolvedAppSecret,
-		OwnerOpenID:       ownerOpenID,
+		OwnerOpenID:       ownerOpenIDForConfig,
 		SetAllowFromEmpty: *setAllowFromEmpty,
 	})
 	if err != nil {
@@ -223,10 +229,13 @@ func runFeishuSetup(args []string, requestedMode string) {
 	if saveResult.AllowFrom != "" {
 		fmt.Printf("   allow_from: %s\n", saveResult.AllowFrom)
 	}
+	if saveResult.AdminFrom != "" {
+		fmt.Printf("   admin_from: %s\n", saveResult.AdminFrom)
+	}
 	fmt.Println()
 
 	if ownerOpenID != "" {
-		printAllowFromGuidance(resolvedAppID, resolvedAppSecret, ownerOpenID, saveResult)
+		printAllowFromGuidance(ownerOpenID, botOpenID, saveResult)
 	}
 
 	printBotMenuGuidance(saveResult.PlatformType)
@@ -234,12 +243,22 @@ func runFeishuSetup(args []string, requestedMode string) {
 	fmt.Println("提醒：扫码新建通常会自动预配权限与事件订阅；请在开放平台核验发布状态与可用范围。")
 }
 
-func printAllowFromGuidance(appID, appSecret, ownerOpenID string, result *config.FeishuCredentialUpdateResult) {
-	botOpenID := fetchBotOpenIDForSetup(appID, appSecret, result.PlatformType)
+func setupOwnerOpenIDForConfig(ownerOpenID, botOpenID string) string {
+	ownerOpenID = strings.TrimSpace(ownerOpenID)
+	botOpenID = strings.TrimSpace(botOpenID)
+	if ownerOpenID == "" {
+		return ""
+	}
+	if botOpenID != "" && ownerOpenID == botOpenID {
+		return ""
+	}
+	return ownerOpenID
+}
 
+func printAllowFromGuidance(ownerOpenID, botOpenID string, result *config.FeishuCredentialUpdateResult) {
 	if botOpenID != "" && ownerOpenID == botOpenID {
 		fmt.Println("⚠️  注册返回的 open_id 是机器人自身的 ID，不是你的用户 ID。")
-		fmt.Println("   飞书 open_id 是应用级别的标识符，注册流程返回的 ID 无法直接用于 allow_from。")
+		fmt.Println("   飞书 open_id 是应用级别的标识符，注册流程返回的 ID 无法直接用于 allow_from / admin_from。")
 		fmt.Println()
 	}
 

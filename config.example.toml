@@ -22,7 +22,7 @@ max_chars = 4000
 
 [[projects]]
 name = "my-project"
-admin_from = "*" # use /whoami in Feishu if you want to restrict admins
+admin_from = "" # setup seeds the onboarding owner when available; use /whoami to edit manually
 show_context_indicator = false
 reply_footer = false
 inject_sender = true

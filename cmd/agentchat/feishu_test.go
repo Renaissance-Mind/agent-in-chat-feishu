@@ -56,6 +56,20 @@ func TestParseAppPair_SecretCanContainColon(t *testing.T) {
 	}
 }
 
+func TestSetupOwnerOpenIDForConfigRejectsBotOpenID(t *testing.T) {
+	got := setupOwnerOpenIDForConfig("ou_bot", "ou_bot")
+	if got != "" {
+		t.Fatalf("setupOwnerOpenIDForConfig = %q, want empty when owner matches bot", got)
+	}
+}
+
+func TestSetupOwnerOpenIDForConfigKeepsUserOpenID(t *testing.T) {
+	got := setupOwnerOpenIDForConfig(" ou_user ", "ou_bot")
+	if got != "ou_user" {
+		t.Fatalf("setupOwnerOpenIDForConfig = %q, want trimmed user open_id", got)
+	}
+}
+
 func TestSaveQRCodeImage_CreatesPNG(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test-qr.png")

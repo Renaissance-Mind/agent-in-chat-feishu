@@ -1029,6 +1029,9 @@ func TestSaveFeishuPlatformCredentials_UpdateFirstCandidateAndAllowFrom(t *testi
 	if result.AllowFrom != "ou_new_owner" {
 		t.Fatalf("result.AllowFrom = %q, want %q", result.AllowFrom, "ou_new_owner")
 	}
+	if result.AdminFrom != "ou_new_owner" {
+		t.Fatalf("result.AdminFrom = %q, want owner open_id", result.AdminFrom)
+	}
 
 	cfg := readConfigFixture(t, configPath)
 	platform := cfg.Projects[0].Platforms[1]
@@ -1043,6 +1046,29 @@ func TestSaveFeishuPlatformCredentials_UpdateFirstCandidateAndAllowFrom(t *testi
 	}
 	if got := stringMapValue(platform.Options, "allow_from"); got != "ou_new_owner" {
 		t.Fatalf("allow_from = %q, want %q", got, "ou_new_owner")
+	}
+	if cfg.Projects[0].AdminFrom != "ou_new_owner" {
+		t.Fatalf("admin_from = %q, want owner open_id", cfg.Projects[0].AdminFrom)
+	}
+}
+
+func TestSaveFeishuPlatformCredentials_PreservesExistingAdminFrom(t *testing.T) {
+	configPath := writeConfigFixture(t, strings.Replace(feishuConfigFixture, `name = "alpha"`, "name = \"alpha\"\nadmin_from = \"ou_existing_admin\"", 1))
+	patchConfigPath(t, configPath)
+
+	_, err := SaveFeishuPlatformCredentials(FeishuCredentialUpdateOptions{
+		ProjectName: "alpha",
+		AppID:       "cli_new_app",
+		AppSecret:   "sec_new_secret",
+		OwnerOpenID: "ou_new_owner",
+	})
+	if err != nil {
+		t.Fatalf("SaveFeishuPlatformCredentials returned error: %v", err)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	if cfg.Projects[0].AdminFrom != "ou_existing_admin" {
+		t.Fatalf("admin_from = %q, want existing admin preserved", cfg.Projects[0].AdminFrom)
 	}
 }
 
@@ -1200,6 +1226,9 @@ func TestEnsureProjectWithFeishuPlatform_CreatesMissingProject(t *testing.T) {
 	}
 	if proj.ShowContextIndicator == nil || *proj.ShowContextIndicator {
 		t.Fatalf("ShowContextIndicator = %v, want false", proj.ShowContextIndicator)
+	}
+	if proj.AdminFrom != "" {
+		t.Fatalf("AdminFrom = %q, want empty so privileged commands are denied until setup seeds an owner", proj.AdminFrom)
 	}
 	opts := proj.Platforms[0].Options
 	if got := stringMapValue(opts, "allow_from"); got != "" {

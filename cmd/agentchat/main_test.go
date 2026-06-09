@@ -281,7 +281,7 @@ idle_timeout_mins = 30
 
 [[projects]]
 name = "demo"
-admin_from = "*"
+admin_from = "ou_admin"
 
 [projects.agent]
 type = "stub-main"
