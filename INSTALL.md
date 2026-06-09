@@ -82,6 +82,8 @@ The `setup` command is the default path. It creates the project/platform config 
 
 For QR onboarding, Feishu usually provisions the bot app, core permissions, and event subscription during the registration flow. For an existing app, run `setup --app ...`, then verify the app in the developer console.
 
+New Feishu projects default to chat binding, not allow-all. Mention the bot in a group or DM, copy the returned `chat_id` into `allow_group_chats` or `allow_private_chats`, then run `agentchat config reload`.
+
 ## 4. Verify Feishu Capabilities
 
 Enable robot capability and long-connection event delivery.

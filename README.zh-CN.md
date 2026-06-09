@@ -89,6 +89,8 @@ agentchat
 
 默认使用 `setup`。扫码新建通常会创建机器人应用，并预配所需权限和事件订阅。关联已有应用时，先执行 `setup --app ...`，再到飞书开放平台核验权限、事件订阅、发布状态和可用范围。
 
+新项目默认使用聊天绑定。未绑定群聊或私聊第一次触发时会被拒绝，并返回 `chat_id`；把这个 ID 加到 `allow_group_chats` 或 `allow_private_chats` 后，执行 `agentchat config reload`。
+
 后台服务模式：
 
 ```bash
@@ -138,7 +140,8 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
-allow_from = "*"
+allow_private_chats = ""
+allow_group_chats = ""
 group_context_buffer = true
 context_buffer_max_messages = 100
 context_buffer_max_age_mins = 0

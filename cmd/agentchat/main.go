@@ -1163,7 +1163,8 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "your-feishu-app-id"
 app_secret = "your-feishu-app-secret"
-allow_from = "*"
+allow_private_chats = ""
+allow_group_chats = ""
 group_reply_all = false
 share_session_in_channel = true
 thread_isolation = false

@@ -26,6 +26,8 @@ agentchat
 
 `setup` 会自动准备项目配置。如果 `--project` 不存在，会创建项目；如果项目里没有 Feishu/Lark 平台，会自动补一个。
 
+新项目默认使用聊天绑定，而不是 allow-all。把机器人拉进群或发起私聊后，第一次触发会返回 `chat_id`；把这个 ID 加到 `allow_group_chats` 或 `allow_private_chats`，再执行 `agentchat config reload`。
+
 ## 创建机器人
 
 ### 方式一：扫码新建
@@ -82,7 +84,8 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
-allow_from = "*"
+allow_private_chats = ""
+allow_group_chats = ""
 group_reply_all = false
 share_session_in_channel = true
 group_context_buffer = true
@@ -98,6 +101,8 @@ reaction_emoji = "OnIt"
 
 | 字段 | 作用 |
 |---|---|
+| `allow_group_chats` | 允许访问的群聊 chat_id；默认空字符串表示未绑定任何群 |
+| `allow_private_chats` | 允许访问的私聊 chat_id；默认空字符串表示未绑定任何私聊 |
 | `allow_from` | 允许访问的用户 open_id，`*` 表示所有人 |
 | `group_reply_all` | `false` 时群里只有 @ 机器人才触发 |
 | `share_session_in_channel` | 群内共享一个 Agent 会话 |

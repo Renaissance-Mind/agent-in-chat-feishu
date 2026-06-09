@@ -42,7 +42,8 @@ type = "feishu" # use "lark" for Lark international
 [projects.platforms.options]
 app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
-allow_from = "*" # comma-separated Feishu open_ids, or "*" for everyone
+allow_private_chats = "" # private chat_id allow-list. Empty means no private chat is bound yet.
+allow_group_chats = "" # group chat_id allow-list. Empty means no group is bound yet.
 enable_feishu_card = true
 progress_style = "card"
 group_reply_all = false

@@ -89,6 +89,8 @@ agentchat
 
 `setup` is the default path. QR onboarding usually creates the bot app with the needed Feishu capabilities and event subscriptions. When binding an existing app, run `setup --app ...`, then verify the permissions and event subscription in the Feishu developer console.
 
+New projects default to chat binding. The first mention from an unbound group or DM is rejected with its `chat_id`; add that ID to `allow_group_chats` or `allow_private_chats`, then run `agentchat config reload`.
+
 For background service mode:
 
 ```bash
@@ -139,7 +141,8 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
-allow_from = "*"
+allow_private_chats = ""
+allow_group_chats = ""
 group_context_buffer = true
 context_buffer_max_messages = 100
 context_buffer_max_age_mins = 0

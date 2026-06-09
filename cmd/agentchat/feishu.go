@@ -244,10 +244,9 @@ func printAllowFromGuidance(appID, appSecret, ownerOpenID string, result *config
 	}
 
 	if result.AllowFrom == "" {
-		fmt.Println("💡 allow_from 未设置（所有用户均可使用）。如需限制访问，请：")
-		fmt.Println("   1. 向机器人发送 /whoami 获取你的 User ID")
-		fmt.Println("   2. 在 config.toml 中设置: allow_from = \"<你的User ID>\"")
-		fmt.Println("   同样，admin_from 也可用 /whoami 获取的 ID 来设置。")
+		fmt.Println("💡 默认使用聊天绑定：未绑定群聊/私聊会被拒绝，并回复 chat_id。")
+		fmt.Println("   把对应 ID 加到 config.toml 的 allow_group_chats 或 allow_private_chats 后，执行 `agentchat config reload`。")
+		fmt.Println("   如还需要按用户限制，可发送 /whoami 获取 User ID，再设置 allow_from / admin_from。")
 		fmt.Println()
 	}
 }

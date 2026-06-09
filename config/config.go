@@ -1727,7 +1727,8 @@ func stringOption(v any) string {
 
 func appendDefaultFeishuPlatformOptionLines(lines []string) []string {
 	return append(lines,
-		`allow_from = "*"`,
+		`allow_private_chats = ""`,
+		`allow_group_chats = ""`,
 		"group_reply_all = false",
 		"share_session_in_channel = true",
 		"thread_isolation = false",

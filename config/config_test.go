@@ -1202,6 +1202,21 @@ func TestEnsureProjectWithFeishuPlatform_CreatesMissingProject(t *testing.T) {
 		t.Fatalf("ShowContextIndicator = %v, want false", proj.ShowContextIndicator)
 	}
 	opts := proj.Platforms[0].Options
+	if got := stringMapValue(opts, "allow_from"); got != "" {
+		t.Fatalf("allow_from = %q, want empty so chat binding is the default", got)
+	}
+	if _, ok := opts["allow_private_chats"]; !ok {
+		t.Fatal("allow_private_chats missing, want empty binding list")
+	}
+	if got := stringMapValue(opts, "allow_private_chats"); got != "" {
+		t.Fatalf("allow_private_chats = %q, want empty binding list", got)
+	}
+	if _, ok := opts["allow_group_chats"]; !ok {
+		t.Fatal("allow_group_chats missing, want empty binding list")
+	}
+	if got := stringMapValue(opts, "allow_group_chats"); got != "" {
+		t.Fatalf("allow_group_chats = %q, want empty binding list", got)
+	}
 	if got, _ := opts["group_context_buffer"].(bool); !got {
 		t.Fatalf("group_context_buffer = %v, want true", opts["group_context_buffer"])
 	}
@@ -1240,6 +1255,21 @@ func TestEnsureProjectWithFeishuPlatform_AddsPlatformWhenProjectExistsWithoutFei
 		t.Fatalf("platform type = %q, want %q", proj.Platforms[1].Type, "feishu")
 	}
 	opts := proj.Platforms[1].Options
+	if got := stringMapValue(opts, "allow_from"); got != "" {
+		t.Fatalf("allow_from = %q, want empty so chat binding is the default", got)
+	}
+	if _, ok := opts["allow_private_chats"]; !ok {
+		t.Fatal("allow_private_chats missing, want empty binding list")
+	}
+	if got := stringMapValue(opts, "allow_private_chats"); got != "" {
+		t.Fatalf("allow_private_chats = %q, want empty binding list", got)
+	}
+	if _, ok := opts["allow_group_chats"]; !ok {
+		t.Fatal("allow_group_chats missing, want empty binding list")
+	}
+	if got := stringMapValue(opts, "allow_group_chats"); got != "" {
+		t.Fatalf("allow_group_chats = %q, want empty binding list", got)
+	}
 	if got, _ := opts["group_context_buffer"].(bool); !got {
 		t.Fatalf("group_context_buffer = %v, want true", opts["group_context_buffer"])
 	}
