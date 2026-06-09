@@ -38,15 +38,30 @@ Install at least one supported local agent:
 Example for a Codex project:
 
 ```toml
+language = "zh"
+idle_timeout_mins = 30
+
+[display]
+tool_messages = false
+
+[stream_preview]
+enabled = true
+interval_ms = 1000
+min_delta_chars = 10
+max_chars = 4000
+
 [[projects]]
 name = "my-project"
+show_context_indicator = false
 
 [projects.agent]
 type = "codex"
 
 [projects.agent.options]
 work_dir = "/absolute/path/to/my-project"
-mode = "default"
+mode = "full-auto"
+reasoning_effort = "medium"
+model = "gpt-5.5"
 ```
 
 ## 3. Create Or Connect A Feishu Bot

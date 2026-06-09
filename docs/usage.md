@@ -96,7 +96,7 @@ Global provider example:
 name = "openai"
 api_key = "${OPENAI_API_KEY}"
 base_url = "https://api.openai.com/v1"
-model = "gpt-5.5-codex"
+model = "gpt-5.5"
 agent_types = ["codex"]
 
 [[projects]]
@@ -132,8 +132,8 @@ Enable:
 ```toml
 [projects.platforms.options]
 group_context_buffer = true
-context_buffer_max_messages = 50
-context_buffer_max_age_mins = 30
+context_buffer_max_messages = 100
+context_buffer_max_age_mins = 0
 ```
 
 When the bot is mentioned in a Feishu group, recent group history is fetched, filtered, cached, and injected as background context. Interactive progress cards are skipped by default, while readable final reply cards are kept.

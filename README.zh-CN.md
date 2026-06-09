@@ -94,15 +94,30 @@ agentchat
 最小配置形态：
 
 ```toml
+language = "zh"
+idle_timeout_mins = 30
+
+[display]
+tool_messages = false
+
+[stream_preview]
+enabled = true
+interval_ms = 1000
+min_delta_chars = 10
+max_chars = 4000
+
 [[projects]]
 name = "my-project"
+show_context_indicator = false
 
 [projects.agent]
 type = "codex"
 
 [projects.agent.options]
 work_dir = "/absolute/path/to/my-project"
-mode = "default"
+mode = "full-auto"
+reasoning_effort = "medium"
+model = "gpt-5.5"
 
 [[projects.platforms]]
 type = "feishu"
@@ -112,10 +127,11 @@ app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
 allow_from = "*"
 group_context_buffer = true
+context_buffer_max_messages = 100
+context_buffer_max_age_mins = 0
 share_session_in_channel = true
 progress_style = "card"
 reaction_emoji = "OnIt"
-done_emoji = "Done"
 ```
 
 默认配置和运行数据目录是 `~/.agentchat`。更完整的飞书专用示例见 [config.example.toml](config.example.toml)。

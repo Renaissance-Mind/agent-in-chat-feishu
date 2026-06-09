@@ -74,13 +74,13 @@ export default function GlobalSettings() {
   const [language, setLanguage] = useState('en');
   const [attachmentSend, setAttachmentSend] = useState('');
   const [logLevel, setLogLevel] = useState('info');
-  const [idleTimeout, setIdleTimeout] = useState(120);
+  const [idleTimeout, setIdleTimeout] = useState(30);
   const [thinkingMessages, setThinkingMessages] = useState(true);
   const [thinkingMaxLen, setThinkingMaxLen] = useState(300);
-  const [toolMessages, setToolMessages] = useState(true);
+  const [toolMessages, setToolMessages] = useState(false);
   const [toolMaxLen, setToolMaxLen] = useState(500);
   const [spEnabled, setSpEnabled] = useState(true);
-  const [spInterval, setSpInterval] = useState(1500);
+  const [spInterval, setSpInterval] = useState(1000);
   const [rlMax, setRlMax] = useState(20);
   const [rlWindow, setRlWindow] = useState(60);
 
@@ -91,13 +91,13 @@ export default function GlobalSettings() {
       setLanguage(s.language || 'en');
       setAttachmentSend(s.attachment_send || '');
       setLogLevel(s.log_level || 'info');
-      setIdleTimeout(s.idle_timeout_mins ?? 120);
+      setIdleTimeout(s.idle_timeout_mins ?? 30);
       setThinkingMessages(s.thinking_messages ?? true);
       setThinkingMaxLen(s.thinking_max_len ?? 300);
-      setToolMessages(s.tool_messages ?? true);
+      setToolMessages(s.tool_messages ?? false);
       setToolMaxLen(s.tool_max_len ?? 500);
       setSpEnabled(s.stream_preview_enabled ?? true);
-      setSpInterval(s.stream_preview_interval_ms ?? 1500);
+      setSpInterval(s.stream_preview_interval_ms ?? 1000);
       setRlMax(s.rate_limit_max_messages ?? 20);
       setRlWindow(s.rate_limit_window_secs ?? 60);
     } catch {

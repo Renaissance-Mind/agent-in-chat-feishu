@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,15 @@ type Manager interface {
 	Restart() error
 	Status() (*Status, error)
 	Platform() string
+}
+
+var daemonPathExtras = []string{
+	"/opt/homebrew/bin",
+	"/usr/local/bin",
+	"/usr/bin",
+	"/bin",
+	"/usr/sbin",
+	"/sbin",
 }
 
 // NewManager returns a platform-specific daemon manager.
@@ -129,10 +139,44 @@ func Resolve(cfg *Config) error {
 	if cfg.EnvPATH == "" {
 		cfg.EnvPATH = os.Getenv("PATH")
 	}
+	cfg.EnvPATH = normalizeDaemonPATH(cfg.EnvPATH)
 	if len(cfg.EnvExtra) == 0 {
 		cfg.EnvExtra = captureDaemonEnv()
 	}
 	return nil
+}
+
+func normalizeDaemonPATH(pathValue string) string {
+	return normalizeDaemonPATHWithExists(pathValue, dirExists)
+}
+
+func normalizeDaemonPATHWithExists(pathValue string, exists func(string) bool) string {
+	seen := make(map[string]bool)
+	parts := make([]string, 0, len(filepath.SplitList(pathValue))+len(daemonPathExtras))
+
+	for _, part := range filepath.SplitList(pathValue) {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[part] {
+			continue
+		}
+		seen[part] = true
+		parts = append(parts, part)
+	}
+
+	for _, part := range daemonPathExtras {
+		if seen[part] || !exists(part) {
+			continue
+		}
+		seen[part] = true
+		parts = append(parts, part)
+	}
+
+	return strings.Join(parts, string(os.PathListSeparator))
+}
+
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
 }
 
 func captureDaemonEnv() map[string]string {

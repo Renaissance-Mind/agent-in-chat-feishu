@@ -221,7 +221,7 @@ func TestEffectiveDisplayQuiet(t *testing.T) {
 			cfg:      Config{},
 			proj:     ProjectConfig{},
 			wantTM:   true,
-			wantTool: true,
+			wantTool: false,
 		},
 		{
 			name:     "global quiet maps when display unset",
@@ -252,7 +252,7 @@ func TestEffectiveDisplayQuiet(t *testing.T) {
 			cfg:      Config{Quiet: &tru},
 			proj:     ProjectConfig{Quiet: &fal},
 			wantTM:   true,
-			wantTool: true,
+			wantTool: false,
 		},
 	}
 	for _, tt := range tests {
@@ -1198,6 +1198,19 @@ func TestEnsureProjectWithFeishuPlatform_CreatesMissingProject(t *testing.T) {
 	if got := stringMapValue(proj.Agent.Options, "work_dir"); got != "/tmp/gamma" {
 		t.Fatalf("work_dir = %q, want explicit override %q", got, "/tmp/gamma")
 	}
+	if proj.ShowContextIndicator == nil || *proj.ShowContextIndicator {
+		t.Fatalf("ShowContextIndicator = %v, want false", proj.ShowContextIndicator)
+	}
+	opts := proj.Platforms[0].Options
+	if got, _ := opts["group_context_buffer"].(bool); !got {
+		t.Fatalf("group_context_buffer = %v, want true", opts["group_context_buffer"])
+	}
+	if got := intMapValue(opts, "context_buffer_max_messages", 0); got != 100 {
+		t.Fatalf("context_buffer_max_messages = %v, want 100", opts["context_buffer_max_messages"])
+	}
+	if got := intMapValue(opts, "context_buffer_max_age_mins", -1); got != 0 {
+		t.Fatalf("context_buffer_max_age_mins = %v, want 0", opts["context_buffer_max_age_mins"])
+	}
 }
 
 func TestEnsureProjectWithFeishuPlatform_AddsPlatformWhenProjectExistsWithoutFeishu(t *testing.T) {
@@ -1225,6 +1238,16 @@ func TestEnsureProjectWithFeishuPlatform_AddsPlatformWhenProjectExistsWithoutFei
 	}
 	if proj.Platforms[1].Type != "feishu" {
 		t.Fatalf("platform type = %q, want %q", proj.Platforms[1].Type, "feishu")
+	}
+	opts := proj.Platforms[1].Options
+	if got, _ := opts["group_context_buffer"].(bool); !got {
+		t.Fatalf("group_context_buffer = %v, want true", opts["group_context_buffer"])
+	}
+	if got := intMapValue(opts, "context_buffer_max_messages", 0); got != 100 {
+		t.Fatalf("context_buffer_max_messages = %v, want 100", opts["context_buffer_max_messages"])
+	}
+	if got := intMapValue(opts, "context_buffer_max_age_mins", -1); got != 0 {
+		t.Fatalf("context_buffer_max_age_mins = %v, want 0", opts["context_buffer_max_age_mins"])
 	}
 }
 
@@ -1598,6 +1621,22 @@ func stringMapValue(m map[string]any, key string) string {
 		return v
 	}
 	return ""
+}
+
+func intMapValue(m map[string]any, key string, fallback int) int {
+	if m == nil {
+		return fallback
+	}
+	switch v := m[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return fallback
+	}
 }
 
 const baseConfigTOML = `
@@ -2040,6 +2079,33 @@ func TestPickAgentTemplateForNewProject(t *testing.T) {
 		}
 		if got.Options == nil {
 			t.Error("Options should not be nil")
+		}
+		if got := stringMapValue(got.Options, "mode"); got != "full-auto" {
+			t.Errorf("mode = %q, want full-auto", got)
+		}
+		if got := stringMapValue(got.Options, "reasoning_effort"); got != "medium" {
+			t.Errorf("reasoning_effort = %q, want medium", got)
+		}
+		if got := stringMapValue(got.Options, "model"); got != "gpt-5.5" {
+			t.Errorf("model = %q, want gpt-5.5", got)
+		}
+	})
+
+	t.Run("explicit codex agent type uses codex defaults", func(t *testing.T) {
+		cfg := &Config{Projects: []ProjectConfig{baseProj}}
+		opts := EnsureProjectWithFeishuOptions{AgentType: "codex"}
+		got := pickAgentTemplateForNewProject(cfg, opts)
+		if got.Type != "codex" {
+			t.Errorf("Type = %q, want codex", got.Type)
+		}
+		if got := stringMapValue(got.Options, "mode"); got != "full-auto" {
+			t.Errorf("mode = %q, want full-auto", got)
+		}
+		if got := stringMapValue(got.Options, "reasoning_effort"); got != "medium" {
+			t.Errorf("reasoning_effort = %q, want medium", got)
+		}
+		if got := stringMapValue(got.Options, "model"); got != "gpt-5.5" {
+			t.Errorf("model = %q, want gpt-5.5", got)
 		}
 	})
 

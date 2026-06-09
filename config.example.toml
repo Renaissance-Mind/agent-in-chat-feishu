@@ -3,86 +3,38 @@
 # `agentchat feishu setup --project <name>` is the recommended way to create
 # this file. Strings support ${ENV_VAR} substitution.
 
-# language = "en" # "en", "zh", or empty for auto-detect
+language = "zh"
 # data_dir = "~/.agentchat" # default runtime/session/cache directory
+idle_timeout_mins = 30
 attachment_send = "on"
+
+[display]
+tool_messages = false
 
 [log]
 level = "info" # debug, info, warn, error
 
-[display]
-thinking_messages = true
-thinking_max_len = 300
-tool_messages = true
-tool_max_len = 500
-
 [stream_preview]
 enabled = true
-interval_ms = 1500
-min_delta_chars = 30
-max_chars = 2000
-
-[rate_limit]
-max_messages = 20
-window_secs = 60
-
-[outgoing_rate_limit]
-max_per_second = 5
-burst = 5
-
-[relay]
-timeout_secs = 120
-
-[cron]
-session_mode = "reuse" # "reuse" or "new_per_run"
-
-[webhook]
-enabled = false
-port = 9111
-token = "${AGENTCHAT_WEBHOOK_TOKEN}"
-path = "/hook"
-
-[bridge]
-enabled = false
-port = 9810
-token = "${AGENTCHAT_BRIDGE_TOKEN}"
-path = "/bridge/ws"
-
-[management]
-enabled = false
-port = 9820
-token = "${AGENTCHAT_MANAGEMENT_TOKEN}"
-
-# Global providers can be shared across projects.
-[[providers]]
-name = "openai"
-api_key = "${OPENAI_API_KEY}"
-base_url = "https://api.openai.com/v1"
-model = "gpt-5.5-codex"
-agent_types = ["codex"]
-
-[[providers]]
-name = "anthropic"
-api_key = "${ANTHROPIC_API_KEY}"
-model = "claude-sonnet-4-20250514"
-agent_types = ["claudecode"]
+interval_ms = 1000
+min_delta_chars = 10
+max_chars = 4000
 
 [[projects]]
 name = "my-project"
 admin_from = "*" # use /whoami in Feishu if you want to restrict admins
+show_context_indicator = false
 reply_footer = false
 inject_sender = true
-show_context_indicator = true
-disabled_commands = []
-filter_external_sessions = false
 
 [projects.agent]
-type = "codex" # codex, claudecode, opencode, gemini, kimi, qoder, iflow, cursor, acp, pi
-provider_refs = ["openai"]
+type = "codex"
 
 [projects.agent.options]
 work_dir = "/absolute/path/to/my-project"
-mode = "default"
+mode = "full-auto"
+reasoning_effort = "medium"
+model = "gpt-5.5"
 
 [[projects.platforms]]
 type = "feishu" # use "lark" for Lark international
@@ -90,51 +42,12 @@ type = "feishu" # use "lark" for Lark international
 [projects.platforms.options]
 app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
-
-# Access control.
 allow_from = "*" # comma-separated Feishu open_ids, or "*" for everyone
-group_reply_all = false # false = only respond when mentioned in groups
-
-# Session shape.
-share_session_in_channel = true # one shared agent session per group
-thread_isolation = false # true = one agent session per Feishu reply thread/root
-
-# Group history context.
-group_context_buffer = true # on mention, fetch recent group history and inject it as background context
-context_buffer_max_messages = 50
-context_buffer_max_age_mins = 30
-
-# Feishu presentation.
 enable_feishu_card = true
-progress_style = "card" # legacy, compact, card
-reply_to_trigger = true
-reaction_emoji = "OnIt" # set "none" to disable incoming reaction
-done_emoji = "Done" # set "none" to disable completion reaction
-resolve_mentions = true # resolve @name in outgoing text by group member names
-
-[projects.heartbeat]
-enabled = false
-interval_mins = 30
-only_when_idle = true
-session_key = "feishu:oc_xxx"
-prompt = "Check project health and report only if action is needed."
-
-[projects.auto_compress]
-enabled = false
-max_tokens = 12000
-min_gap_mins = 30
-
-[projects.references]
-normalize_agents = ["codex", "claudecode"]
-render_platforms = ["feishu"]
-display_path = "relative"
-
-# Custom slash commands.
-[[commands]]
-name = "standup"
-description = "Summarize current project status"
-prompt = "Summarize what changed recently and what should happen next."
-
-[[aliases]]
-name = "状态"
-command = "/status"
+progress_style = "card"
+group_reply_all = false
+share_session_in_channel = true
+thread_isolation = false
+group_context_buffer = true
+context_buffer_max_messages = 100
+context_buffer_max_age_mins = 0

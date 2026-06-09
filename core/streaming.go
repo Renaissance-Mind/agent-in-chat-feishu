@@ -12,9 +12,9 @@ import (
 type StreamPreviewCfg struct {
 	Enabled           bool     // global toggle
 	DisabledPlatforms []string // platforms where streaming preview is disabled (e.g. "feishu")
-	IntervalMs        int      // minimum ms between updates (default 1500)
-	MinDeltaChars     int      // minimum new chars before sending an update (default 30)
-	MaxChars          int      // max preview length (default 2000)
+	IntervalMs        int      // minimum ms between updates (default 1000)
+	MinDeltaChars     int      // minimum new chars before sending an update (default 10)
+	MaxChars          int      // max preview length (default 4000)
 }
 
 // DefaultStreamPreviewCfg returns sensible defaults.
@@ -22,9 +22,9 @@ func DefaultStreamPreviewCfg() StreamPreviewCfg {
 	return StreamPreviewCfg{
 		Enabled:           true,
 		DisabledPlatforms: nil,
-		IntervalMs:        1500,
-		MinDeltaChars:     30,
-		MaxChars:          2000,
+		IntervalMs:        1000,
+		MinDeltaChars:     10,
+		MaxChars:          4000,
 	}
 }
 

@@ -108,7 +108,7 @@ type Config struct {
 	Bridge             BridgeConfig            `toml:"bridge"`
 	Management         ManagementConfig        `toml:"management"`
 	Hooks              []HookConfig            `toml:"hooks"`
-	IdleTimeoutMins    *int                    `toml:"idle_timeout_mins,omitempty"` // max minutes between agent events; 0 = no timeout; default 120
+	IdleTimeoutMins    *int                    `toml:"idle_timeout_mins,omitempty"` // max minutes between agent events; 0 = no timeout; default 30
 }
 
 // CronConfig controls cron job behavior.
@@ -157,16 +157,16 @@ type DisplayConfig struct {
 	ThinkingMessages *bool `toml:"thinking_messages"` // whether thinking messages are shown; default true
 	ThinkingMaxLen   *int  `toml:"thinking_max_len"`  // max chars for thinking messages; 0 = no truncation; default 300
 	ToolMaxLen       *int  `toml:"tool_max_len"`      // max chars for tool use messages; 0 = no truncation; default 500
-	ToolMessages     *bool `toml:"tool_messages"`     // whether tool progress messages are shown; default true
+	ToolMessages     *bool `toml:"tool_messages"`     // whether tool progress messages are shown; default false
 }
 
 // StreamPreviewConfig controls real-time streaming preview in IM.
 type StreamPreviewConfig struct {
 	Enabled           *bool    `toml:"enabled"`                      // default true
 	DisabledPlatforms []string `toml:"disabled_platforms,omitempty"` // platforms where preview is disabled (e.g. ["feishu"])
-	IntervalMs        *int     `toml:"interval_ms"`                  // min ms between updates; default 1500
-	MinDeltaChars     *int     `toml:"min_delta_chars"`              // min new chars before update; default 30
-	MaxChars          *int     `toml:"max_chars"`                    // max preview length; default 2000
+	IntervalMs        *int     `toml:"interval_ms"`                  // min ms between updates; default 1000
+	MinDeltaChars     *int     `toml:"min_delta_chars"`              // min new chars before update; default 10
+	MaxChars          *int     `toml:"max_chars"`                    // max preview length; default 4000
 }
 
 // RateLimitConfig controls per-session message rate limiting.
@@ -568,7 +568,7 @@ func projectQuietEffective(cfg *Config, proj *ProjectConfig) bool {
 // they map to false (backward-compatible with pre-display quiet = true).
 func EffectiveDisplay(cfg *Config, proj *ProjectConfig) (thinkingMessages, toolMessages bool, thinkingMaxLen, toolMaxLen int) {
 	thinkingMessages = true
-	toolMessages = true
+	toolMessages = false
 	thinkingMaxLen = 300
 	toolMaxLen = 500
 	if cfg.Display.ThinkingMessages != nil {
@@ -1491,6 +1491,7 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 			block = append(block, fmt.Sprintf("type = %s", quoteTomlString(platformType)))
 			block = append(block, "")
 			block = append(block, "[projects.platforms.options]")
+			block = appendDefaultFeishuPlatformOptionLines(block)
 			if insertAt < len(lines) && strings.TrimSpace(lines[insertAt]) != "" {
 				block = append(block, "")
 			}
@@ -1532,6 +1533,9 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 	}
 	lines = append(lines, "[[projects]]")
 	lines = append(lines, fmt.Sprintf("name = %s", quoteTomlString(proj.Name)))
+	lines = append(lines, "reply_footer = false")
+	lines = append(lines, "inject_sender = true")
+	lines = append(lines, "show_context_indicator = false")
 	lines = append(lines, "")
 	lines = append(lines, "[projects.agent]")
 	lines = append(lines, fmt.Sprintf("type = %s", quoteTomlString(proj.Agent.Type)))
@@ -1543,11 +1547,18 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 	if mode, ok := proj.Agent.Options["mode"].(string); ok && strings.TrimSpace(mode) != "" {
 		lines = append(lines, fmt.Sprintf("mode = %s", quoteTomlString(mode)))
 	}
+	if reasoningEffort, ok := proj.Agent.Options["reasoning_effort"].(string); ok && strings.TrimSpace(reasoningEffort) != "" {
+		lines = append(lines, fmt.Sprintf("reasoning_effort = %s", quoteTomlString(reasoningEffort)))
+	}
+	if model, ok := proj.Agent.Options["model"].(string); ok && strings.TrimSpace(model) != "" {
+		lines = append(lines, fmt.Sprintf("model = %s", quoteTomlString(model)))
+	}
 	lines = append(lines, "")
 	lines = append(lines, "[[projects.platforms]]")
 	lines = append(lines, fmt.Sprintf("type = %s", quoteTomlString(platformType)))
 	lines = append(lines, "")
 	lines = append(lines, "[projects.platforms.options]")
+	lines = appendDefaultFeishuPlatformOptionLines(lines)
 	if err := writeRawConfig(joinConfigLines(lines, hadTrailing)); err != nil {
 		return nil, err
 	}
@@ -1714,6 +1725,22 @@ func stringOption(v any) string {
 	return ""
 }
 
+func appendDefaultFeishuPlatformOptionLines(lines []string) []string {
+	return append(lines,
+		`allow_from = "*"`,
+		"group_reply_all = false",
+		"share_session_in_channel = true",
+		"thread_isolation = false",
+		"group_context_buffer = true",
+		"context_buffer_max_messages = 100",
+		"context_buffer_max_age_mins = 0",
+		"enable_feishu_card = true",
+		`progress_style = "card"`,
+		"reply_to_trigger = true",
+		`reaction_emoji = "OnIt"`,
+	)
+}
+
 func mergeAllowFromValue(current, userID string) string {
 	current = strings.TrimSpace(current)
 	userID = strings.TrimSpace(userID)
@@ -1783,6 +1810,9 @@ func pickAgentTemplateForNewProject(cfg *Config, opts EnsureProjectWithFeishuOpt
 	if agentType := strings.TrimSpace(opts.AgentType); agentType != "" {
 		realType, preset, _ := strings.Cut(agentType, ":")
 		agentOpts := map[string]any{}
+		if realType == "codex" {
+			agentOpts = defaultCodexAgentOptions()
+		}
 		if realType == "acp" && preset != "" {
 			agentOpts["command"] = preset
 			agentOpts["display_name"] = preset
@@ -1797,7 +1827,15 @@ func pickAgentTemplateForNewProject(cfg *Config, opts EnsureProjectWithFeishuOpt
 	}
 	return AgentConfig{
 		Type:    "codex",
-		Options: map[string]any{},
+		Options: defaultCodexAgentOptions(),
+	}
+}
+
+func defaultCodexAgentOptions() map[string]any {
+	return map[string]any{
+		"mode":             "full-auto",
+		"reasoning_effort": "medium",
+		"model":            "gpt-5.5",
 	}
 }
 
@@ -2689,7 +2727,7 @@ func GetGlobalSettings() map[string]any {
 	if cfg.IdleTimeoutMins != nil {
 		result["idle_timeout_mins"] = *cfg.IdleTimeoutMins
 	} else {
-		result["idle_timeout_mins"] = 120
+		result["idle_timeout_mins"] = 30
 	}
 	// Display
 	if cfg.Display.ThinkingMessages != nil {
@@ -2705,7 +2743,7 @@ func GetGlobalSettings() map[string]any {
 	if cfg.Display.ToolMessages != nil {
 		result["tool_messages"] = *cfg.Display.ToolMessages
 	} else {
-		result["tool_messages"] = true
+		result["tool_messages"] = false
 	}
 	if cfg.Display.ToolMaxLen != nil {
 		result["tool_max_len"] = *cfg.Display.ToolMaxLen
@@ -2718,7 +2756,7 @@ func GetGlobalSettings() map[string]any {
 		spEnabled = *cfg.StreamPreview.Enabled
 	}
 	result["stream_preview_enabled"] = spEnabled
-	spInterval := 1500
+	spInterval := 1000
 	if cfg.StreamPreview.IntervalMs != nil {
 		spInterval = *cfg.StreamPreview.IntervalMs
 	}

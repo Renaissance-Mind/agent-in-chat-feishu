@@ -233,11 +233,11 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 	shareSessionInChannel, _ := opts["share_session_in_channel"].(bool)
 	threadIsolation, _ := opts["thread_isolation"].(bool)
 	groupContextBuffer, _ := opts["group_context_buffer"].(bool)
-	contextBufferMaxMessages := intOption(opts["context_buffer_max_messages"], 50)
+	contextBufferMaxMessages := intOption(opts["context_buffer_max_messages"], 100)
 	if contextBufferMaxMessages < 1 {
 		return nil, fmt.Errorf("%s: context_buffer_max_messages must be >= 1", name)
 	}
-	contextBufferMaxAgeMins := intOption(opts["context_buffer_max_age_mins"], 30)
+	contextBufferMaxAgeMins := intOption(opts["context_buffer_max_age_mins"], 0)
 	if contextBufferMaxAgeMins < 0 {
 		return nil, fmt.Errorf("%s: context_buffer_max_age_mins must be >= 0", name)
 	}

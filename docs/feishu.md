@@ -65,13 +65,16 @@ name = "my-project"
 admin_from = "*"
 reply_footer = false
 inject_sender = true
+show_context_indicator = false
 
 [projects.agent]
 type = "codex"
 
 [projects.agent.options]
 work_dir = "/absolute/path/to/my-project"
-mode = "default"
+mode = "full-auto"
+reasoning_effort = "medium"
+model = "gpt-5.5"
 
 [[projects.platforms]]
 type = "feishu"
@@ -83,14 +86,12 @@ allow_from = "*"
 group_reply_all = false
 share_session_in_channel = true
 group_context_buffer = true
-context_buffer_max_messages = 50
-context_buffer_max_age_mins = 30
+context_buffer_max_messages = 100
+context_buffer_max_age_mins = 0
 progress_style = "card"
 enable_feishu_card = true
 reply_to_trigger = true
 reaction_emoji = "OnIt"
-done_emoji = "Done"
-resolve_mentions = true
 ```
 
 常用字段：

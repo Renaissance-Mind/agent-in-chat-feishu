@@ -96,7 +96,7 @@ yolo
 name = "openai"
 api_key = "${OPENAI_API_KEY}"
 base_url = "https://api.openai.com/v1"
-model = "gpt-5.5-codex"
+model = "gpt-5.5"
 agent_types = ["codex"]
 
 [[projects]]
@@ -132,8 +132,8 @@ agentchat provider remove --project my-project --name relay
 ```toml
 [projects.platforms.options]
 group_context_buffer = true
-context_buffer_max_messages = 50
-context_buffer_max_age_mins = 30
+context_buffer_max_messages = 100
+context_buffer_max_age_mins = 0
 ```
 
 机器人被 @ 时，会拉取最近飞书群历史，过滤、缓存后作为背景上下文发送给 Agent。进度卡片默认不会进入这段上下文；可读的最终回复卡片会保留。

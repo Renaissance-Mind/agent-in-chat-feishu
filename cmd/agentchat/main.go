@@ -239,7 +239,7 @@ func main() {
 		}
 
 		engine := core.NewEngine(proj.Name, agent, platforms, sessionFile, lang)
-		showCtx := true
+		showCtx := false
 		if proj.ShowContextIndicator != nil {
 			showCtx = *proj.ShowContextIndicator
 		}
@@ -415,13 +415,14 @@ func main() {
 		})
 
 		// Wire idle timeout
+		mins := 30
 		if cfg.IdleTimeoutMins != nil {
-			mins := *cfg.IdleTimeoutMins
-			if mins <= 0 {
-				engine.SetEventIdleTimeout(0)
-			} else {
-				engine.SetEventIdleTimeout(time.Duration(mins) * time.Minute)
-			}
+			mins = *cfg.IdleTimeoutMins
+		}
+		if mins <= 0 {
+			engine.SetEventIdleTimeout(0)
+		} else {
+			engine.SetEventIdleTimeout(time.Duration(mins) * time.Minute)
 		}
 
 		// Wire auto-compress settings
@@ -1123,19 +1124,35 @@ func bootstrapConfig(path string) error {
 	const tmpl = `# agentchat configuration
 # Docs: https://github.com/Renaissance-Mind/agent-in-chat-feishu
 
+language = "zh"
+idle_timeout_mins = 30
+
 [log]
 level = "info"
 
+[display]
+tool_messages = false
+
+[stream_preview]
+enabled = true
+interval_ms = 1000
+min_delta_chars = 10
+max_chars = 4000
+
 [[projects]]
 name = "my-project"
+reply_footer = false
+inject_sender = true
+show_context_indicator = false
 
 [projects.agent]
-type = "claudecode"   # "claudecode", "codex", "cursor", "gemini", "qoder", "opencode", or "iflow"
+type = "codex"   # "codex", "claudecode", "cursor", "gemini", "qoder", "opencode", or "iflow"
 
 [projects.agent.options]
 work_dir = "/path/to/your/project"
-mode = "default"
-# model = "claude-sonnet-4-20250514"
+mode = "full-auto"
+reasoning_effort = "medium"
+model = "gpt-5.5"
 
 # --- Choose at least one platform below ---
 
@@ -1146,6 +1163,17 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "your-feishu-app-id"
 app_secret = "your-feishu-app-secret"
+allow_from = "*"
+group_reply_all = false
+share_session_in_channel = true
+thread_isolation = false
+group_context_buffer = true
+context_buffer_max_messages = 100
+context_buffer_max_age_mins = 0
+enable_feishu_card = true
+progress_style = "card"
+reply_to_trigger = true
+reaction_emoji = "OnIt"
 
 # This distribution only ships the Feishu/Lark platform adapter.
 `
@@ -1287,15 +1315,16 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 		return nil, fmt.Errorf("project %q not found in config", projName)
 	}
 
+	mins := 30
 	if cfg.IdleTimeoutMins != nil {
-		mins := *cfg.IdleTimeoutMins
-		if mins <= 0 {
-			engine.SetEventIdleTimeout(0)
-		} else {
-			engine.SetEventIdleTimeout(time.Duration(mins) * time.Minute)
-		}
-		result.IdleTimeoutUpdated = true
+		mins = *cfg.IdleTimeoutMins
 	}
+	if mins <= 0 {
+		engine.SetEventIdleTimeout(0)
+	} else {
+		engine.SetEventIdleTimeout(time.Duration(mins) * time.Minute)
+	}
+	result.IdleTimeoutUpdated = true
 
 	// Reload display config (includes legacy quiet → display mapping)
 	tm, tool, tmlen, toollen := config.EffectiveDisplay(cfg, proj)
@@ -1327,7 +1356,7 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 		engine.SetResetOnIdle(0)
 	}
 
-	showCtx := true
+	showCtx := false
 	if proj.ShowContextIndicator != nil {
 		showCtx = *proj.ShowContextIndicator
 	}
