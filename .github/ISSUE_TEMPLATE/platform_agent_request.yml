@@ -1,0 +1,45 @@
+name: Agent Support Request
+description: Request support for an additional AI coding agent backend
+title: "[Agent Support] "
+labels: ["new-integration"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This distribution is Feishu/Lark-only for chat platforms. Use this form for new AI coding agent backend requests.
+
+  - type: input
+    id: name
+    attributes:
+      label: Agent Name
+      placeholder: "e.g. Aider"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Briefly describe the agent and why it should be supported.
+    validations:
+      required: true
+
+  - type: textarea
+    id: api-info
+    attributes:
+      label: CLI / API Information
+      description: Share official docs, CLI behavior, or SDK links.
+      placeholder: |
+        - Official docs: https://...
+        - CLI command: ...
+        - Streaming/output format: ...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Willingness to Contribute
+      options:
+        - label: I'd be willing to submit a PR for this agent backend

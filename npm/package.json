@@ -1,0 +1,34 @@
+{
+  "name": "agent-in-chat-feishu",
+  "version": "1.3.2",
+  "description": "Run local AI coding agents inside Feishu/Lark chat loops.",
+  "keywords": [
+    "claude-code",
+    "ai-coding",
+    "feishu",
+    "lark",
+    "codex",
+    "claude-code",
+    "agent-in-chat",
+    "chatbot",
+    "bridge"
+  ],
+  "homepage": "https://github.com/Renaissance-Mind/agent-in-chat-feishu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Renaissance-Mind/agent-in-chat-feishu.git"
+  },
+  "license": "MIT",
+  "author": "Agent in Chat Feishu contributors",
+  "bin": {
+    "agentchat": "run.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "install.js",
+    "run.js",
+    "README.md"
+  ]
+}

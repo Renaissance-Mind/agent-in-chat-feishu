@@ -1,202 +1,184 @@
-<p align="right">
-  🌐 <strong>English</strong> | <a href="README.zh-CN.md">简体中文</a>
-</p>
+# agent-in-chat-feishu
 
-<h1 align="center">agent-in-chat-feishu</h1>
+[English](README.md) | [中文](README.zh-CN.md)
 
 <p align="center">
-  Let Codex work inside the real Feishu group-chat loop, with trigger-time history context.
+  <img src="docs/images/banner.svg" alt="Agent in Chat Feishu" width="720">
 </p>
 
-<p align="center">
-  <img alt="Go" src="https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white">
-  <img alt="Feishu" src="https://img.shields.io/badge/Feishu-WebSocket-3370FF">
-  <img alt="Codex" src="https://img.shields.io/badge/Codex-CLI-111111">
-  <img alt="Status" src="https://img.shields.io/badge/status-early%20MVP-orange">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-yellow.svg">
-</p>
+Put Codex, Claude Code, and other coding agents into the Feishu chat loop your team already uses.
 
-[Features](#features) • [How It Works](#how-it-works) • [Installation](#installation) • [Feishu App Setup](#feishu-app-setup) • [Usage](#usage)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Platform](https://img.shields.io/badge/chat-Feishu%20%2F%20Lark-00BFA5)](docs/feishu.md)
 
-`agent-in-chat-feishu` is a small Feishu bridge for running Codex in a normal group conversation. Instead of turning the group into a bot-only workspace or relying on hidden/silent context messages, it fetches recent Feishu history when the bot is mentioned, builds a compact context prompt, runs `codex exec --json`, and replies to the triggering message.
+`agent-in-chat-feishu` is a Feishu/Lark-only distribution derived from cc-connect. It keeps the mature agent runtime, sessions, slash commands, providers, progress cards, attachments, cron jobs, relay, web UI, and multi-agent support, while removing the concrete adapters for other chat apps.
 
-It was extracted from the Feishu pieces needed around `cc-connect`, then simplified into a standalone tool focused on one workflow: **mention the bot, let Codex read the recent chat, get a reply in the same conversation.**
+The point is not to make your group chat feel like a bot room. The agent joins the ordinary conversation loop: people talk normally, mention the bot when work should happen, and Codex receives the missing group context before it starts.
 
 ## Features
 
-- 💬 **Chat-native Codex loop** — Codex reacts to real group mentions and replies in-thread.
-- 🕰️ **Trigger-time history** — recent Feishu group messages are fetched when the mention happens.
-- 👥 **Readable names** — user, bot, and app IDs are cached locally as display names.
-- ✅ **Processing reactions** — add an `OnIt` reaction while Codex is working, then remove it.
-- 🧹 **Progress-card filtering** — interactive card messages are ignored; normal replies remain visible.
-- 🧵 **One Codex thread per chat** — each Feishu group resumes its own Codex conversation.
-- 🔐 **Optional chat whitelist** — restrict the bot to selected `oc_...` group IDs.
-- 🧩 **Self-contained service** — no `cc-connect` daemon, no silent-message mechanism, no broad platform layer.
+- 💬 **Feishu/Lark first** — bot setup, message receive, reply, cards, reactions, attachments, group history context.
+- 🧠 **Agent runtime preserved** — `/model`, `/stop`, `/new`, `/list`, `/switch`, `/history`, `/provider`, `/cron`, `/dir`, `/mode`, `/usage`, `/commands`, `/alias`, `/delete`, `/bind`, `/web`, `/workspace`.
+- 🤝 **Many agents** — Codex, Claude Code, OpenCode, Gemini, Kimi, Qoder, iFlow, Cursor, ACP, Pi.
+- 🧩 **Real chat context** — on mention, recent Feishu group history can be fetched, filtered, cached, and injected as background context.
+- 🪪 **Readable identities** — Feishu user/app/chat names are cached on disk under `~/.agentchat` so Codex sees names instead of long IDs whenever possible.
+- 📌 **Less noise by default** — progress cards are ignored when building group context; readable final reply cards still count.
+- 🛠️ **Operational surface kept** — daemon mode, management API, webhook, web UI, cron/heartbeat, relay, session store, provider switching, and attachment send-back.
 
-## How It Works
+## How It Feels
 
-```mermaid
-flowchart LR
-  A["Feishu group mention"] --> B["WebSocket message event"]
-  B --> C["Refresh user / bot / app names"]
-  C --> D["Fetch recent IM history"]
-  D --> E["Filter cards and build context"]
-  E --> F["codex exec --json"]
-  F --> G["Reply to triggering message"]
-  F --> H["Persist chat -> Codex thread"]
+Feishu group:
+
+```text
+Mina: The deploy failed again after the config change.
+Alex: I think the env file is not loaded in the worker.
+River: The log says "missing OPENAI_API_KEY", but local dev is fine.
+Alex: @agentchat check the recent config and tell us what to fix.
 ```
 
-Here is a simplified comparison between the Feishu group chat and what Codex receives:
+What Codex receives:
 
-| Feishu group messages | Prompt passed to Codex |
-| --- | --- |
-| <pre>09:42 Maya: I moved tomorrow's meeting notes into the shared doc.<br>09:45 Lin: Great. I still need to add the action items from the design review.<br>09:48 Nova: Let's ask Codex to turn this into a short checklist before lunch.<br>09:51 Maya: @Codex Please pull out what we still need to do today.</pre> | <pre>[Feishu group history]<br>Recent group messages fetched at trigger time. Use them as background and answer the current trigger.<br>[09:42 Maya] I moved tomorrow's meeting notes into the shared doc.<br>[09:45 Lin] Great. I still need to add the action items from the design review.<br>[09:48 Nova] Let's ask Codex to turn this into a short checklist before lunch.<br><br>[Current trigger]<br>Maya: Please pull out what we still need to do today.</pre> |
+```text
+[Feishu group context]
+Mina: The deploy failed again after the config change.
+Alex: I think the env file is not loaded in the worker.
+River: The log says "missing OPENAI_API_KEY", but local dev is fine.
+[/Feishu group context]
 
-The bot mention is stripped from the current message, and the trigger itself is kept separate from the history block.
+Alex: check the recent config and tell us what to fix.
+```
+
+Progress cards from this or other bots are skipped. Sender names come from the local identity cache when available; new IDs trigger a Feishu lookup and then get persisted.
 
 ## Installation
 
-Prerequisites:
-
-- Go 1.23 or newer
-- A working `codex` CLI
-- A Feishu self-built app with bot access and WebSocket events enabled
+```bash
+npm install -g agent-in-chat-feishu
+agentchat --help
+```
 
 Build from source:
 
 ```bash
-git clone https://github.com/sariel/agent-in-chat-feishu.git
+git clone https://github.com/Renaissance-Mind/agent-in-chat-feishu.git
 cd agent-in-chat-feishu
-go build -o agentchat ./cmd/agentchat
+make build
+./agentchat --help
 ```
 
-## Feishu App Setup
+## Quick Start
 
-Create a new Feishu/Lark app with QR onboarding:
+Create or connect a Feishu/Lark bot and write the project config:
 
 ```bash
-agentchat setup
+agentchat feishu setup --project my-project
 ```
 
-Or bind an existing app:
+Connect an existing app:
 
 ```bash
-agentchat setup --app cli_xxx:sec_xxx
-agentchat auth-url
+agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 ```
 
-The setup command writes `app_id` and `app_secret` into `~/.agentchat/config.toml` and creates the local data directories. Then open the permissions link printed by setup or `agentchat auth-url`, confirm the requested scopes, and publish or approve the app if Feishu asks.
+Then run the bridge:
 
-The built-in permission set covers group mentions, group message history, bot replies, message reactions, member-name lookup, bot/app lookup, and card resources. After setup, also verify that the app subscribes to `im.message.receive_v1` through WebSocket events.
+```bash
+agentchat
+```
+
+`setup` is the default path. QR onboarding usually creates the bot app with the needed Feishu capabilities and event subscriptions. When binding an existing app, run `setup --app ...`, then verify the permissions and event subscription in the Feishu developer console.
 
 ## Configuration
 
-Edit `~/.agentchat/config.toml`:
+Minimal config shape:
 
 ```toml
-data_dir = "~/.agentchat"
+[[projects]]
+name = "my-project"
 
-[feishu]
-app_id = "cli_xxx"
-app_secret = "xxx"
-base_url = "https://open.feishu.cn"
-allowed_chats = []
+[projects.agent]
+type = "codex"
+
+[projects.agent.options]
+work_dir = "/absolute/path/to/my-project"
+mode = "default"
+
+[[projects.platforms]]
+type = "feishu"
+
+[projects.platforms.options]
+app_id = "${FEISHU_APP_ID}"
+app_secret = "${FEISHU_APP_SECRET}"
+allow_from = "*"
+group_context_buffer = true
+share_session_in_channel = true
+progress_style = "card"
 reaction_emoji = "OnIt"
-done_emoji = "none"
-
-[agent]
-command = "codex"
-work_dir = "."
-mode = "auto-edit"
-timeout_mins = 30
-
-[context]
-max_messages = 100
-max_age_mins = 1440
+done_emoji = "Done"
 ```
 
-Recommended Feishu capabilities:
+The default config and runtime data directory is `~/.agentchat`. See [config.example.toml](config.example.toml) for a fuller Feishu-only example.
 
-- Receive IM message events
-- Send and reply to messages as bot
-- Add and remove message reactions
-- Read group message history
-- Read group members
+## Feishu Permissions
 
-The member-read capability is what lets the context say `Maya` instead of `ou_...`.
+For a full bot that behaves like the current runtime, enable robot capability, long-connection event delivery, and these permissions/events:
 
-`reaction_emoji` is added to the triggering message while Codex runs, then removed before the final reply is marked complete. Set it to `"none"` to disable processing reactions. Set `done_emoji = "Done"` if you also want a completion reaction after a successful reply.
+| Capability | Feishu permission or event |
+|---|---|
+| Receive group mentions | `im.message.receive_v1` with group mention message permission |
+| Receive direct messages | `im.message.receive_v1` with p2p message permission |
+| Fetch recent group history | group message history / `im:message.group_msg` |
+| Send and reply | `im:message:send_as_bot` or broader `im:message` |
+| Add/remove reactions | message reaction permission or broader `im:message` |
+| Upload image/file attachments | image/file resource upload permission |
+| Resolve names from group members | group info/member permission such as `im:chat` |
+| Use interactive cards | card callback event `card.action.trigger` |
 
-## Usage
+Official references: [send messages](https://open.feishu.cn/document/server-docs/im-v1/message/create), [reply](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply), [receive event](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive), [history](https://open.feishu.cn/document/server-docs/im-v1/message/list), [reactions](https://open.feishu.cn/document/server-docs/im-v1/message-reaction/create?lang=zh-CN), [group members](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/chat-members/get), [image upload](https://open.feishu.cn/document/server-docs/im-v1/image/create).
 
-Start the bridge:
+## Commands
+
+Examples you can send in Feishu:
+
+```text
+/help
+/model
+/stop
+/new
+/history
+/provider
+/cron
+/mode
+/usage
+/web
+```
+
+The CLI is `agentchat`:
 
 ```bash
-agentchat run -config ~/.agentchat/config.toml
+agentchat sessions list
+agentchat send --session <session-id> --message "ship a short status update"
+agentchat daemon start
+agentchat web
 ```
 
-Then mention the bot in a Feishu group:
+## Documentation
 
-```text
-@Codex summarize the next steps from the last few messages
-```
-
-The tool will:
-
-1. Verify the bot was mentioned in a group text message.
-2. Refresh local identity mappings for that group.
-3. Fetch recent group history from Feishu.
-4. Remove interactive progress cards from the context.
-5. Resume the chat's Codex thread, or create one on first use.
-6. Add and remove Feishu reactions around the run.
-7. Reply to the triggering message with Codex's final answer.
-
-## Data Stored Locally
-
-By default, local state lives under `~/.agentchat`:
-
-```text
-~/.agentchat/
-├── config.toml
-├── cache/
-│   └── feishu/
-│       └── identity_cache.json
-└── sessions/
-    └── sessions.json
-```
-
-## Project Layout
-
-```text
-cmd/agentchat/              CLI entrypoint and Feishu setup
-internal/agent/             Codex JSON runner and parser
-internal/config/            TOML config and defaults
-internal/contextbuilder/    Feishu history prompt rendering
-internal/feishu/            OpenAPI client and WebSocket runtime
-internal/identity/          User / bot / app name cache
-internal/store/             Chat-to-Codex-thread persistence
-```
-
-## Testing
-
-```bash
-go test ./...
-go build -o agentchat ./cmd/agentchat
-```
+- [Feishu setup guide](docs/feishu.md)
+- [Install guide](INSTALL.md)
+- [Usage guide](docs/usage.md)
+- [Management API](docs/management-api.md)
+- [Bridge protocol](docs/bridge-protocol.md)
 
 ## Contributing
 
-Contributions are welcome. Good first areas:
-
-- More message types, especially images and files
-- Better deploy examples, such as launchd or systemd
-- Multi-tenant / multi-app configuration
-- Safer operational docs for Feishu permissions
+Contributions are welcome. Keep the distribution Feishu/Lark-only unless the project direction changes, and keep core agent/runtime behavior compatible with cc-connect where possible.
 
 ## License
 
-MIT License
+[MIT](LICENSE)
 
 ## Acknowledgements
 
-Thanks to [`cc-connect`](https://github.com/chenhg5/cc-connect), whose Feishu integration work inspired and informed this standalone project.
+This project is derived from and deeply indebted to [cc-connect](https://github.com/chenhg5/cc-connect). Thanks to the cc-connect authors and contributors for the original agent runtime, chat command model, and Feishu platform foundation.

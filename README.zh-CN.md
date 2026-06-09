@@ -1,202 +1,184 @@
-<p align="right">
-  🌐 <a href="README.md">English</a> | <strong>简体中文</strong>
-</p>
+# agent-in-chat-feishu
 
-<h1 align="center">agent-in-chat-feishu</h1>
+[English](README.md) | [中文](README.zh-CN.md)
 
 <p align="center">
-  让 Codex 进入真实的飞书群聊循环，并在触发时读取最近聊天上下文。
+  <img src="docs/images/banner.svg" alt="Agent in Chat Feishu" width="720">
 </p>
 
-<p align="center">
-  <img alt="Go" src="https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go&logoColor=white">
-  <img alt="Feishu" src="https://img.shields.io/badge/Feishu-WebSocket-3370FF">
-  <img alt="Codex" src="https://img.shields.io/badge/Codex-CLI-111111">
-  <img alt="Status" src="https://img.shields.io/badge/status-early%20MVP-orange">
-  <img alt="License" src="https://img.shields.io/badge/License-MIT-yellow.svg">
-</p>
+把 Codex、Claude Code 和其他编程 Agent 放进团队日常飞书聊天循环里。
 
-[功能](#功能) • [工作方式](#工作方式) • [安装](#安装) • [飞书应用配置](#飞书应用配置) • [使用](#使用)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Platform](https://img.shields.io/badge/chat-Feishu%20%2F%20Lark-00BFA5)](docs/feishu.md)
 
-`agent-in-chat-feishu` 是一个轻量的飞书接入工具，用来让 Codex 参与正常的群聊协作。它不是把群聊变成一个机器人工作台，也不依赖隐藏的 silent 上下文消息；当群里 @ 机器人时，它会读取最近的聊天记录，整理成上下文，执行 `codex exec --json`，然后回复触发它的那条消息。
+`agent-in-chat-feishu` 是从 cc-connect 派生出来的飞书/Lark 专用版本。它保留成熟的 Agent 运行时、会话、斜杠命令、模型提供方、进度卡片、附件、定时任务、relay、Web UI 和多 Agent 支持，同时移除了其他聊天软件的具体适配器。
 
-这个项目抽离了 `cc-connect` 里我们真正需要的飞书接入部分，并把新做的“被 @ 时查询历史”的上下文方案独立出来。目标很简单：**在真实群聊里 @ 一下，Codex 看最近聊天，然后在同一个对话里回复。**
+它的重点不是“在群里放一个问答机器人”，而是让 Agent 进入正常聊天 loop：大家照常讨论，需要执行时 @ 它，它会先补齐最近群聊上下文，再开始工作。
 
-## 功能
+## 特性
 
-- 💬 **原生聊天循环** — Codex 响应真实群聊里的 @，而不是另起一个机器人工作流。
-- 🕰️ **触发时查询历史** — 每次被 @ 时从飞书 IM 历史接口拉取最近消息。
-- 👥 **显示人名** — 本地缓存 user、bot、app 的名称映射，减少 `ou_...` 这类 ID。
-- ✅ **处理中表情** — Codex 工作时给触发消息加 `OnIt`，完成后移除。
-- 🧹 **过滤进度卡片** — 默认忽略 interactive card，只保留正常文本回复。
-- 🧵 **每群一个 Codex 线程** — 不同飞书群会续不同的 Codex conversation。
-- 🔐 **可选群白名单** — 可以限制只响应指定 `oc_...` 群。
-- 🧩 **独立运行** — 不依赖 `cc-connect` daemon，不迁 silent 机制，也不带完整平台抽象。
+- 💬 **专注飞书/Lark**：机器人配置、收消息、回复、卡片、表情、附件、群历史上下文。
+- 🧠 **保留 cc-connect 核心能力**：`/model`、`/stop`、`/new`、`/list`、`/switch`、`/history`、`/provider`、`/cron`、`/dir`、`/mode`、`/usage`、`/commands`、`/alias`、`/delete`、`/bind`、`/web`、`/workspace`。
+- 🤝 **保留多 Agent 支持**：Codex、Claude Code、OpenCode、Gemini、Kimi、Qoder、iFlow、Cursor、ACP、Pi。
+- 🧩 **真实聊天上下文**：被 @ 时可以拉取最近群历史，过滤、缓存后作为背景上下文发送给 Agent。
+- 🪪 **更短、更可读的身份信息**：飞书用户、应用和群名称会落盘缓存在 `~/.agentchat`，Codex 尽量看到名字而不是长 ID。
+- 📌 **默认少看噪声**：构建群上下文时跳过进度卡片；可读的最终回复卡片仍会进入上下文。
+- 🛠️ **保留运行管理面**：daemon、management API、webhook、Web UI、cron/heartbeat、relay、session store、provider 切换、附件回传。
 
-## 工作方式
+## 日常场景
 
-```mermaid
-flowchart LR
-  A["飞书群里 @ 机器人"] --> B["WebSocket 消息事件"]
-  B --> C["刷新用户 / 机器人 / App 名称"]
-  C --> D["拉取最近 IM 历史"]
-  D --> E["过滤卡片并构造上下文"]
-  E --> F["codex exec --json"]
-  F --> G["回复触发消息"]
-  F --> H["保存 群 -> Codex thread"]
+飞书群里的消息：
+
+```text
+Mina：刚才部署又失败了，好像是在改配置后开始的。
+Alex：我怀疑 worker 没读到 env 文件。
+River：日志里写的是 missing OPENAI_API_KEY，但本地是好的。
+Alex：@agentchat 看下最近配置和日志，告诉我们怎么修。
 ```
 
-下面是一个简化对比：左边是飞书群里大家实际看到的消息，右边是整理后传给 Codex 的内容。
+Codex 看到的上下文：
 
-| 飞书群里的消息记录 | Codex 实际看到的消息 |
-| --- | --- |
-| <pre>09:42 小林：我把明天会用的会议纪要先放到共享文档里了。<br>09:45 小周：好，我等会儿补一下设计评审里提到的待办。<br>09:48 小夏：中午前要不要让 Codex 先整理一版清单？<br>09:51 小林：@Codex 帮我看看今天还剩哪些事情要处理。</pre> | <pre>[Feishu group history]<br>Recent group messages fetched at trigger time. Use them as background and answer the current trigger.<br>[09:42 小林] 我把明天会用的会议纪要先放到共享文档里了。<br>[09:45 小周] 好，我等会儿补一下设计评审里提到的待办。<br>[09:48 小夏] 中午前要不要让 Codex 先整理一版清单？<br><br>[Current trigger]<br>小林: 帮我看看今天还剩哪些事情要处理。</pre> |
+```text
+[Feishu group context]
+Mina：刚才部署又失败了，好像是在改配置后开始的。
+Alex：我怀疑 worker 没读到 env 文件。
+River：日志里写的是 missing OPENAI_API_KEY，但本地是好的。
+[/Feishu group context]
 
-触发消息里的机器人 @ 会被去掉，并单独放进 `[Current trigger]`，不会再重复出现在历史记录里。
+Alex：看下最近配置和日志，告诉我们怎么修。
+```
+
+这个例子是编的，没有使用真实姓名。进度卡片会被跳过；能从本地身份缓存或群成员表解析出来时，发送者会显示为名字。
 
 ## 安装
 
-前置条件：
-
-- Go 1.23 或更新版本
-- 可用的 `codex` CLI
-- 一个已开启机器人和 WebSocket 事件的飞书自建应用
+```bash
+npm install -g agent-in-chat-feishu
+agentchat --help
+```
 
 从源码构建：
 
 ```bash
-git clone https://github.com/sariel/agent-in-chat-feishu.git
+git clone https://github.com/Renaissance-Mind/agent-in-chat-feishu.git
 cd agent-in-chat-feishu
-go build -o agentchat ./cmd/agentchat
+make build
+./agentchat --help
 ```
 
-## 飞书应用配置
+## 快速开始
 
-通过扫码引导创建一个新的飞书 / Lark 应用：
+新建或连接飞书/Lark 机器人，并写入项目配置：
 
 ```bash
-agentchat setup
+agentchat feishu setup --project my-project
 ```
 
-或者关联已有应用：
+关联已有应用：
 
 ```bash
-agentchat setup --app cli_xxx:sec_xxx
-agentchat auth-url
+agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 ```
 
-`setup` 会把 `app_id` 和 `app_secret` 写入 `~/.agentchat/config.toml`，并创建本地数据目录。然后打开 setup 或 `agentchat auth-url` 打印出来的权限直达链接，确认开通所需 scopes；如果飞书要求发布版本或管理员审批，还需要按页面提示完成。
+然后启动：
 
-内置权限集合覆盖群聊 @ 事件、群聊历史消息、机器人回复、消息表情回复、群成员名称映射、机器人 / App 名称映射和卡片资源。setup 之后还需要确认应用已经通过 WebSocket 订阅 `im.message.receive_v1` 事件。
+```bash
+agentchat
+```
+
+默认使用 `setup`。扫码新建通常会创建机器人应用，并预配所需权限和事件订阅。关联已有应用时，先执行 `setup --app ...`，再到飞书开放平台核验权限、事件订阅、发布状态和可用范围。
 
 ## 配置
 
-编辑 `~/.agentchat/config.toml`：
+最小配置形态：
 
 ```toml
-data_dir = "~/.agentchat"
+[[projects]]
+name = "my-project"
 
-[feishu]
-app_id = "cli_xxx"
-app_secret = "xxx"
-base_url = "https://open.feishu.cn"
-allowed_chats = []
+[projects.agent]
+type = "codex"
+
+[projects.agent.options]
+work_dir = "/absolute/path/to/my-project"
+mode = "default"
+
+[[projects.platforms]]
+type = "feishu"
+
+[projects.platforms.options]
+app_id = "${FEISHU_APP_ID}"
+app_secret = "${FEISHU_APP_SECRET}"
+allow_from = "*"
+group_context_buffer = true
+share_session_in_channel = true
+progress_style = "card"
 reaction_emoji = "OnIt"
-done_emoji = "none"
-
-[agent]
-command = "codex"
-work_dir = "."
-mode = "auto-edit"
-timeout_mins = 30
-
-[context]
-max_messages = 100
-max_age_mins = 1440
+done_emoji = "Done"
 ```
 
-建议开启的飞书能力：
+默认配置和运行数据目录是 `~/.agentchat`。更完整的飞书专用示例见 [config.example.toml](config.example.toml)。
 
-- 接收 IM 消息事件
-- 以机器人身份发送 / 回复消息
-- 添加 / 删除消息表情回复
-- 读取群聊消息历史
-- 读取群成员列表
+## 飞书权限
 
-读取群成员权限是显示 `小林` 这类名字，而不是 `ou_...` ID 的关键。
+如果希望行为和当前运行的机器人一致，需要启用机器人能力、长连接事件，并开通这些权限/事件：
 
-`reaction_emoji` 会在 Codex 执行时添加到触发消息上，并在完成前移除；设为 `"none"` 可以关闭处理中表情。如果希望成功回复后再加一个完成表情，可以设置 `done_emoji = "Done"`。
+| 能力 | 飞书权限或事件 |
+|---|---|
+| 接收群里 @ 机器人消息 | `im.message.receive_v1` 和群 @ 消息权限 |
+| 接收单聊消息 | `im.message.receive_v1` 和单聊消息权限 |
+| 拉取最近群历史 | 群消息历史 / `im:message.group_msg` |
+| 发送和回复消息 | `im:message:send_as_bot` 或更宽的 `im:message` |
+| 自动添加/移除表情 | 消息表情权限或更宽的 `im:message` |
+| 上传图片/文件附件 | 图片/文件资源上传权限 |
+| 解析群成员名称 | 群信息/群成员权限，例如 `im:chat` |
+| 使用交互卡片 | 卡片回调事件 `card.action.trigger` |
 
-## 使用
+官方参考：[发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[回复消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply)、[接收消息事件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive)、[会话历史](https://open.feishu.cn/document/server-docs/im-v1/message/list)、[表情回复](https://open.feishu.cn/document/server-docs/im-v1/message-reaction/create?lang=zh-CN)、[群成员列表](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/chat-members/get)、[上传图片](https://open.feishu.cn/document/server-docs/im-v1/image/create)。
 
-启动：
+## 常用命令
+
+可以直接在飞书里发送：
+
+```text
+/help
+/model
+/stop
+/new
+/history
+/provider
+/cron
+/mode
+/usage
+/web
+```
+
+本地 CLI 叫 `agentchat`：
 
 ```bash
-agentchat run -config ~/.agentchat/config.toml
+agentchat sessions list
+agentchat send --session <session-id> --message "发一条简短状态更新"
+agentchat daemon start
+agentchat web
 ```
 
-然后在飞书群里 @ 机器人：
+## 文档
 
-```text
-@Codex 总结一下刚才讨论的下一步
-```
+- [飞书接入指南](docs/feishu.md)
+- [安装指南](INSTALL.md)
+- [使用说明](docs/usage.md)
+- [Management API](docs/management-api.md)
+- [Bridge 协议](docs/bridge-protocol.zh-CN.md)
 
-工具会自动：
+## 参与贡献
 
-1. 确认这是一条群聊文本 @ 消息。
-2. 刷新该群的本地名称映射。
-3. 从飞书拉取最近群聊历史。
-4. 从上下文中过滤 interactive 进度卡片。
-5. 续上这个群对应的 Codex thread，首次使用则新建。
-6. 在执行前后添加 / 移除飞书表情回复。
-7. 把 Codex 的最终回答回复到触发消息下面。
-
-## 本地数据
-
-默认本地状态保存在 `~/.agentchat`：
-
-```text
-~/.agentchat/
-├── config.toml
-├── cache/
-│   └── feishu/
-│       └── identity_cache.json
-└── sessions/
-    └── sessions.json
-```
-
-## 项目结构
-
-```text
-cmd/agentchat/              CLI 入口和飞书 setup
-internal/agent/             Codex JSON 执行器和解析器
-internal/config/            TOML 配置和默认值
-internal/contextbuilder/    飞书历史上下文渲染
-internal/feishu/            OpenAPI 客户端和 WebSocket 接入逻辑
-internal/identity/          用户 / 机器人 / App 名称缓存
-internal/store/             群到 Codex thread 的持久化
-```
-
-## 测试
-
-```bash
-go test ./...
-go build -o agentchat ./cmd/agentchat
-```
-
-## 贡献
-
-欢迎贡献。比较适合先做的方向：
-
-- 支持更多消息类型，例如图片和文件
-- 补充 launchd / systemd 等部署示例
-- 支持多租户 / 多应用配置
-- 把飞书权限说明写得更安全、更清楚
+欢迎贡献。除非项目方向改变，请保持这个发行版专注飞书/Lark，同时尽量保持 cc-connect 的核心 Agent 和聊天运行时行为兼容。
 
 ## 许可证
 
-MIT License
+[MIT](LICENSE)
 
 ## 致谢
 
-感谢 [`cc-connect`](https://github.com/chenhg5/cc-connect)。本项目的飞书接入和运行方式受到了 `cc-connect` 的启发，也复用了我们围绕它验证出的关键思路。
+本项目派生自 [cc-connect](https://github.com/chenhg5/cc-connect)，并大量受益于它的 Agent 运行时、聊天命令模型和飞书平台基础。感谢 cc-connect 的作者与贡献者。
