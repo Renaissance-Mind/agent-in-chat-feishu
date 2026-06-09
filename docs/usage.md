@@ -19,6 +19,21 @@ agentchat
 
 See [Feishu setup guide](feishu.md) for permissions, events, and group history behavior.
 
+## Daemon Mode
+
+Install the background service after `setup` has created the config directory:
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat
+```
+
+The service captures the installer process `PATH` and adds common macOS/Linux CLI
+directories. For custom Node or agent managers, pass an explicit value:
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+```
+
 ## Supported Agents
 
 Set the agent type in `config.toml`:

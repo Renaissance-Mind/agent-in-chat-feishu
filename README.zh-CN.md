@@ -89,6 +89,18 @@ agentchat
 
 默认使用 `setup`。扫码新建通常会创建机器人应用，并预配所需权限和事件订阅。关联已有应用时，先执行 `setup --app ...`，再到飞书开放平台核验权限、事件订阅、发布状态和可用范围。
 
+后台服务模式：
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat
+```
+
+如果本地 Agent CLI、Node.js 或 `lark-cli` 来自自定义路径管理器，可以显式传入服务 PATH：
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+```
+
 ## 配置
 
 最小配置形态：

@@ -42,7 +42,11 @@ type Manager interface {
 
 var daemonPathExtras = []string{
 	"/opt/homebrew/bin",
+	"/opt/homebrew/sbin",
 	"/usr/local/bin",
+	"/usr/local/sbin",
+	"/opt/local/bin",
+	"/opt/local/sbin",
 	"/usr/bin",
 	"/bin",
 	"/usr/sbin",

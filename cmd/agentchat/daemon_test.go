@@ -50,3 +50,23 @@ func TestParseDaemonInstallArgs_WorkDirOverridesConfig(t *testing.T) {
 		t.Fatalf("cfg.WorkDir = %q, want %q", cfg.WorkDir, want)
 	}
 }
+
+func TestParseDaemonInstallArgs_EnvPath(t *testing.T) {
+	cfg, _, err := parseDaemonInstallArgs([]string{"--env-path", "/custom/bin:/usr/bin"})
+	if err != nil {
+		t.Fatalf("parseDaemonInstallArgs returned error: %v", err)
+	}
+	if cfg.EnvPATH != "/custom/bin:/usr/bin" {
+		t.Fatalf("cfg.EnvPATH = %q, want explicit env path", cfg.EnvPATH)
+	}
+}
+
+func TestParseDaemonInstallArgs_EnvPathEqualsForm(t *testing.T) {
+	cfg, _, err := parseDaemonInstallArgs([]string{"--env-path=/custom/bin:/usr/bin"})
+	if err != nil {
+		t.Fatalf("parseDaemonInstallArgs returned error: %v", err)
+	}
+	if cfg.EnvPATH != "/custom/bin:/usr/bin" {
+		t.Fatalf("cfg.EnvPATH = %q, want explicit env path", cfg.EnvPATH)
+	}
+}

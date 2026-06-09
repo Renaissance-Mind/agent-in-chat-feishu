@@ -89,6 +89,19 @@ agentchat
 
 `setup` is the default path. QR onboarding usually creates the bot app with the needed Feishu capabilities and event subscriptions. When binding an existing app, run `setup --app ...`, then verify the permissions and event subscription in the Feishu developer console.
 
+For background service mode:
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat
+```
+
+If your local agent CLI, Node.js, or `lark-cli` is installed through a custom path
+manager, pass the service PATH explicitly:
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+```
+
 ## Configuration
 
 Minimal config shape:

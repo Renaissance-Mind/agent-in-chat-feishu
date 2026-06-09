@@ -150,6 +150,15 @@ func parseDaemonInstallArgs(args []string) (daemon.Config, bool, error) {
 			i = next
 		case strings.HasPrefix(arg, "--work-dir="):
 			cfg.WorkDir = strings.TrimPrefix(arg, "--work-dir=")
+		case arg == "--env-path":
+			value, next, err := daemonInstallFlagValue(args, i, "--env-path")
+			if err != nil {
+				return daemon.Config{}, false, err
+			}
+			cfg.EnvPATH = value
+			i = next
+		case strings.HasPrefix(arg, "--env-path="):
+			cfg.EnvPATH = strings.TrimPrefix(arg, "--env-path=")
 		case arg == "--config" || arg == "-config":
 			value, next, err := daemonInstallFlagValue(args, i, arg)
 			if err != nil {
@@ -403,6 +412,7 @@ Install flags:
   --log-file PATH       Log file path (default: ~/.agentchat/logs/agentchat.log)
   --log-max-size N      Max log file size in MB (default: 10)
   --work-dir DIR        Directory containing config.toml (default: current dir)
+  --env-path PATH       PATH for daemon-launched agents (default: current PATH plus common CLI dirs)
   --force               Overwrite existing installation
 
 Logs flags:
