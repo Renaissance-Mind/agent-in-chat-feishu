@@ -1,0 +1,20 @@
+data_dir = "~/.agentchat"
+
+[feishu]
+app_id = "cli_xxx"
+app_secret = "xxx"
+base_url = "https://open.feishu.cn"
+allowed_chats = []
+
+[agent]
+command = "codex"
+work_dir = "."
+model = ""
+mode = "auto-edit"
+reasoning_effort = ""
+codex_home = ""
+timeout_mins = 30
+
+[context]
+max_messages = 100
+max_age_mins = 1440
