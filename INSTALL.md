@@ -115,9 +115,17 @@ agentchat
 Daemon mode:
 
 ```bash
-agentchat daemon start
+agentchat daemon install --work-dir ~/.agentchat
 agentchat daemon status
 agentchat daemon logs
+```
+
+Daemon install captures the current `PATH`, matching cc-connect behavior. If you
+install from a non-interactive shell or your agent CLI, Node.js, or `lark-cli`
+lives in a custom path manager, pass it explicitly:
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
 ```
 
 Web UI:

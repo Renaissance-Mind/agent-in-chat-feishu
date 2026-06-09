@@ -19,6 +19,21 @@ agentchat
 
 权限、事件订阅和群历史上下文见 [飞书接入指南](feishu.md)。
 
+## Daemon 后台服务
+
+`setup` 创建配置目录后，可以安装后台服务：
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat
+```
+
+服务会记录安装进程的 `PATH`，与 cc-connect 行为一致。如果你从非交互 shell
+安装，或 Node、Agent CLI、`lark-cli` 来自自定义路径管理器，可以显式传入：
+
+```bash
+agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+```
+
 ## 支持的 Agent
 
 在 `config.toml` 中设置：
