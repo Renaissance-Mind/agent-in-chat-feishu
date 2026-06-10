@@ -65,7 +65,7 @@ if (needsReinstall()) {
       cwd: __dirname,
     });
   } catch {
-    console.error("[agentchat] Auto-install failed. Run manually: npm uninstall -g agentchat && npm install -g agentchat@beta");
+    console.error("[agentchat] Auto-install failed. Run manually: npm install -g @renaissancemind/agent-in-chat-feishu");
     process.exit(1);
   }
 }

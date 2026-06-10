@@ -62,7 +62,7 @@ body:
     attributes:
       label: Installation Method
       options:
-        - npm (npm install -g agent-in-chat-feishu)
+        - npm (npm install -g @renaissancemind/agent-in-chat-feishu)
         - Binary download (GitHub Releases)
         - Build from source
     validations:

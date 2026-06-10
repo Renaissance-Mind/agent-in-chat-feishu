@@ -56,7 +56,7 @@ Progress cards from this or other bots are skipped. Sender names come from the l
 ## Installation
 
 ```bash
-npm install -g agent-in-chat-feishu
+npm install -g @renaissancemind/agent-in-chat-feishu
 agentchat --help
 ```
 

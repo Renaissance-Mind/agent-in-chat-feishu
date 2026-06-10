@@ -56,7 +56,7 @@ Alex：看下最近配置和日志，告诉我们怎么修。
 ## 安装
 
 ```bash
-npm install -g agent-in-chat-feishu
+npm install -g @renaissancemind/agent-in-chat-feishu
 agentchat --help
 ```
 
