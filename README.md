@@ -60,6 +60,8 @@ npm install -g @renaissancemind/agent-in-chat-feishu
 agentchat --help
 ```
 
+The npm release installs the matching platform binary from npm optional dependencies, so install does not fetch the CLI from GitHub Releases.
+
 Build from source:
 
 ```bash

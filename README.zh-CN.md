@@ -60,6 +60,8 @@ npm install -g @renaissancemind/agent-in-chat-feishu
 agentchat --help
 ```
 
+npm 包会通过 npm optional dependencies 安装当前系统对应的平台二进制，不会在安装时再从 GitHub Releases 下载 CLI。
+
 从源码构建：
 
 ```bash

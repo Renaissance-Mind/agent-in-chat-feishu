@@ -8,6 +8,9 @@ Run local AI coding agents inside Feishu/Lark chat loops.
 npm install -g @renaissancemind/agent-in-chat-feishu
 ```
 
+The main package installs the matching platform binary from npm optional dependencies.
+It does not download the CLI from GitHub Releases during install.
+
 The installed CLI command is:
 
 ```bash

@@ -2,76 +2,92 @@
 
 "use strict";
 
-const { execFileSync, execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
 const PACKAGE = require("./package.json");
-const EXPECTED_VER = PACKAGE.version; // e.g. "1.1.0-beta.4"
 const NAME = "agentchat";
-const binDir = path.join(__dirname, "bin");
-const ext = process.platform === "win32" ? ".exe" : "";
-const binaryPath = path.join(binDir, NAME + ext);
 
-// parseVersion splits "1.2.3-beta.1" into { nums: [1,2,3], preTag: "beta", preNum: 1 }
-function parseVersion(v) {
-  v = v.replace(/^v/, "").trim();
-  const [base, ...rest] = v.split("-");
-  const nums = base.split(".").map(Number);
-  const pre = rest.join("-");
-  const m = pre.match(/^([a-zA-Z]+)\.?(\d+)?$/);
-  return { nums, preTag: m ? m[1] : pre, preNum: m && m[2] ? parseInt(m[2], 10) : 0, hasPre: pre !== "" };
-}
+const TARGETS = {
+  "darwin/arm64": {
+    packageName: `${PACKAGE.name}-darwin-arm64`,
+    binaryName: NAME,
+  },
+  "darwin/x64": {
+    packageName: `${PACKAGE.name}-darwin-x64`,
+    binaryName: NAME,
+  },
+  "linux/arm64": {
+    packageName: `${PACKAGE.name}-linux-arm64`,
+    binaryName: NAME,
+  },
+  "linux/x64": {
+    packageName: `${PACKAGE.name}-linux-x64`,
+    binaryName: NAME,
+  },
+  "win32/arm64": {
+    packageName: `${PACKAGE.name}-windows-arm64`,
+    binaryName: `${NAME}.exe`,
+  },
+  "win32/x64": {
+    packageName: `${PACKAGE.name}-windows-x64`,
+    binaryName: `${NAME}.exe`,
+  },
+};
 
-// isNewerOrEqual returns true if installed >= expected
-function isNewerOrEqual(installed, expected) {
-  const a = parseVersion(installed);
-  const b = parseVersion(expected);
-  const len = Math.max(a.nums.length, b.nums.length);
-  for (let i = 0; i < len; i++) {
-    const av = a.nums[i] || 0;
-    const bv = b.nums[i] || 0;
-    if (av > bv) return true;
-    if (av < bv) return false;
+function targetForPlatform(platform = process.platform, arch = process.arch) {
+  const target = TARGETS[`${platform}/${arch}`];
+  if (!target) {
+    const supported = Object.keys(TARGETS).join(", ");
+    throw new Error(
+      `[agentchat] Unsupported platform: ${platform}/${arch}.\n` +
+        `[agentchat] Supported platforms: ${supported}`
+    );
   }
-  // Same base: no pre-release >= any pre-release (1.2.3 >= 1.2.3-beta.1)
-  if (!a.hasPre && b.hasPre) return true;
-  if (a.hasPre && !b.hasPre) return false;
-  if (!a.hasPre && !b.hasPre) return true;
-  // Both pre-release: compare tag then number (rc > beta, beta.10 > beta.9)
-  if (a.preTag !== b.preTag) return a.preTag > b.preTag;
-  return a.preNum >= b.preNum;
+  return target;
 }
 
-function needsReinstall() {
-  if (!fs.existsSync(binaryPath)) return true;
+function resolveBinaryPath(target = targetForPlatform(), baseDir = __dirname) {
+  let packageJSONPath;
   try {
-    const out = execFileSync(binaryPath, ["--version"], { encoding: "utf8", timeout: 5000 });
-    if (out.includes(EXPECTED_VER)) return false;
-    // Extract version from output (e.g. "agentchat 1.2.2-beta.1" or "1.2.2-beta.1")
-    const match = out.match(/(\d+\.\d+\.\d+[^\s]*)/);
-    if (match && isNewerOrEqual(match[1], EXPECTED_VER)) return false;
-    return true;
-  } catch {
-    return true;
+    packageJSONPath = require.resolve(`${target.packageName}/package.json`, { paths: [baseDir] });
+  } catch (err) {
+    throw new Error(
+      `[agentchat] Missing platform package ${target.packageName}@${PACKAGE.version}.\n` +
+        "[agentchat] Reinstall with optional dependencies enabled:\n" +
+        "  npm install -g @renaissancemind/agent-in-chat-feishu"
+    );
   }
+
+  const binaryPath = path.join(path.dirname(packageJSONPath), "bin", target.binaryName);
+  if (!fs.existsSync(binaryPath)) {
+    throw new Error(
+      `[agentchat] Platform package ${target.packageName}@${PACKAGE.version} did not contain ` +
+        `${path.join("bin", target.binaryName)}.`
+    );
+  }
+  return binaryPath;
 }
 
-if (needsReinstall()) {
-  console.log(`[agentchat] Binary missing or outdated, installing v${EXPECTED_VER}...`);
+function main(argv = process.argv.slice(2)) {
+  const binaryPath = resolveBinaryPath();
   try {
-    execSync("node " + JSON.stringify(path.join(__dirname, "install.js")), {
-      stdio: "inherit",
-      cwd: __dirname,
-    });
-  } catch {
-    console.error("[agentchat] Auto-install failed. Run manually: npm install -g @renaissancemind/agent-in-chat-feishu");
-    process.exit(1);
+    execFileSync(binaryPath, argv, { stdio: "inherit" });
+  } catch (err) {
+    if (typeof err.status === "number") {
+      process.exit(err.status);
+    }
+    throw err;
   }
 }
 
-try {
-  execFileSync(binaryPath, process.argv.slice(2), { stdio: "inherit" });
-} catch (err) {
-  process.exit(err.status || 1);
+if (require.main === module) {
+  main();
 }
+
+module.exports = {
+  TARGETS,
+  resolveBinaryPath,
+  targetForPlatform,
+};
