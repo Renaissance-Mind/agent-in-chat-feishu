@@ -59,7 +59,7 @@ type = "codex"
 
 [projects.agent.options]
 work_dir = "/absolute/path/to/my-project"
-mode = "full-auto"
+mode = "yolo"
 reasoning_effort = "medium"
 model = "gpt-5.5"
 ```

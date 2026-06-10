@@ -2,6 +2,8 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
+> ⚠️ **Personal-first defaults.** This project is designed primarily for personal or trusted small-team use. The default Codex agent mode is intentionally permissive so it can read local files, call local tools, and act like the agent you would run from your own terminal. For shared, production, or untrusted groups, review `mode`, `admin_from`, chat allowlists, and disabled commands before running it.
+
 <p align="center">
   <img src="docs/images/banner.svg" alt="Agent in Chat Feishu" width="720">
 </p>
@@ -131,7 +133,7 @@ type = "codex"
 
 [projects.agent.options]
 work_dir = "/absolute/path/to/my-project"
-mode = "full-auto"
+mode = "yolo"
 reasoning_effort = "medium"
 model = "gpt-5.5"
 

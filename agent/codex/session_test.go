@@ -47,7 +47,8 @@ func TestBuildExecArgs_IncludesReasoningEffort(t *testing.T) {
 	want := []string{
 		"exec",
 		"--skip-git-repo-check",
-		"--full-auto",
+		"--sandbox",
+		"workspace-write",
 		"--model",
 		"o3",
 		"-c",
@@ -64,6 +65,22 @@ func TestBuildExecArgs_IncludesReasoningEffort(t *testing.T) {
 		if args[i] != want[i] {
 			t.Fatalf("args[%d] = %q, want %q, args=%v", i, args[i], want[i], args)
 		}
+	}
+}
+
+func TestBuildExecArgs_YoloBypassesSandbox(t *testing.T) {
+	cs, err := newCodexSession(context.Background(), "/tmp/project", "", "", "yolo", "", "", nil, "")
+	if err != nil {
+		t.Fatalf("newCodexSession: %v", err)
+	}
+
+	args := cs.buildExecArgs("hello", nil)
+
+	if !containsSequence(args, []string{"--dangerously-bypass-approvals-and-sandbox"}) {
+		t.Fatalf("args missing yolo bypass flag: %v", args)
+	}
+	if containsSequence(args, []string{"--sandbox", "workspace-write"}) {
+		t.Fatalf("yolo args should not include workspace sandbox: %v", args)
 	}
 }
 

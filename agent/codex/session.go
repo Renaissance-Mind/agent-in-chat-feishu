@@ -178,7 +178,7 @@ func (cs *codexSession) buildExecArgs(prompt string, imagePaths []string) []stri
 
 	switch cs.mode {
 	case "auto-edit", "full-auto":
-		args = append(args, "--full-auto")
+		args = append(args, "--sandbox", "workspace-write")
 	case "yolo":
 		args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 	}

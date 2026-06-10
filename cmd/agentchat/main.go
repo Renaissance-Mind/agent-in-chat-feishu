@@ -1150,7 +1150,7 @@ type = "codex"   # "codex", "claudecode", "cursor", "gemini", "qoder", "opencode
 
 [projects.agent.options]
 work_dir = "/path/to/your/project"
-mode = "full-auto"
+mode = "yolo"
 reasoning_effort = "medium"
 model = "gpt-5.5"
 

@@ -1862,7 +1862,7 @@ func pickAgentTemplateForNewProject(cfg *Config, opts EnsureProjectWithFeishuOpt
 
 func defaultCodexAgentOptions() map[string]any {
 	return map[string]any{
-		"mode":             "full-auto",
+		"mode":             "yolo",
 		"reasoning_effort": "medium",
 		"model":            "gpt-5.5",
 	}

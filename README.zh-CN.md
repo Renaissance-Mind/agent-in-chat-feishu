@@ -2,6 +2,8 @@
 
 [English](README.md) | [中文](README.zh-CN.md)
 
+> ⚠️ **默认面向个人使用。** 这个项目主要面向个人或可信小团队场景。默认 Codex Agent 权限会开得比较高，让它能像你在自己终端里运行一样读取本地文件、调用本地工具并完成任务。如果要放到共享、生产或不完全可信的群里，请先检查并收紧 `mode`、`admin_from`、聊天 allowlist 和禁用命令配置。
+
 <p align="center">
   <img src="docs/images/banner.svg" alt="Agent in Chat Feishu" width="720">
 </p>
@@ -49,7 +51,7 @@ River：日志里写的是 missing OPENAI_API_KEY，但本地是好的。
 Alex：看下最近配置和日志，告诉我们怎么修。
 ```
 
-这个例子是编的，没有使用真实姓名。进度卡片会被跳过；能从本地身份缓存或群成员表解析出来时，发送者会显示为名字。
+进度卡片会被跳过；能从本地身份缓存或群成员表解析出来时，发送者会显示为名字。
 
 ## 安装
 
@@ -130,7 +132,7 @@ type = "codex"
 
 [projects.agent.options]
 work_dir = "/absolute/path/to/my-project"
-mode = "full-auto"
+mode = "yolo"
 reasoning_effort = "medium"
 model = "gpt-5.5"
 

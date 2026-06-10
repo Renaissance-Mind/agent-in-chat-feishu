@@ -24,8 +24,8 @@ func init() {
 //
 // Modes (maps to codex exec flags):
 //   - "suggest":   default, no special flags (safe commands only)
-//   - "auto-edit": --full-auto (sandbox-protected auto execution)
-//   - "full-auto": --full-auto (sandbox-protected auto execution)
+//   - "auto-edit": --sandbox workspace-write (sandbox-protected auto execution)
+//   - "full-auto": --sandbox workspace-write (sandbox-protected auto execution)
 //   - "yolo":      --dangerously-bypass-approvals-and-sandbox
 type Agent struct {
 	workDir         string

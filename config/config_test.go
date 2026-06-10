@@ -2139,8 +2139,8 @@ func TestPickAgentTemplateForNewProject(t *testing.T) {
 		if got.Options == nil {
 			t.Error("Options should not be nil")
 		}
-		if got := stringMapValue(got.Options, "mode"); got != "full-auto" {
-			t.Errorf("mode = %q, want full-auto", got)
+		if got := stringMapValue(got.Options, "mode"); got != "yolo" {
+			t.Errorf("mode = %q, want yolo", got)
 		}
 		if got := stringMapValue(got.Options, "reasoning_effort"); got != "medium" {
 			t.Errorf("reasoning_effort = %q, want medium", got)
@@ -2157,8 +2157,8 @@ func TestPickAgentTemplateForNewProject(t *testing.T) {
 		if got.Type != "codex" {
 			t.Errorf("Type = %q, want codex", got.Type)
 		}
-		if got := stringMapValue(got.Options, "mode"); got != "full-auto" {
-			t.Errorf("mode = %q, want full-auto", got)
+		if got := stringMapValue(got.Options, "mode"); got != "yolo" {
+			t.Errorf("mode = %q, want yolo", got)
 		}
 		if got := stringMapValue(got.Options, "reasoning_effort"); got != "medium" {
 			t.Errorf("reasoning_effort = %q, want medium", got)
