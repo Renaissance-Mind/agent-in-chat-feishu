@@ -1438,6 +1438,20 @@ type FeishuCredentialUpdateResult struct {
 	AdminFrom        string
 }
 
+const defaultFeishuSetupConfigHeader = `language = "zh"
+idle_timeout_mins = 30
+attachment_send = "on"
+
+[display]
+tool_messages = false
+
+[stream_preview]
+enabled = true
+interval_ms = 1000
+min_delta_chars = 10
+max_chars = 4000
+`
+
 // EnsureProjectWithFeishuPlatform ensures target project exists. If project does
 // not exist, it creates one with a Feishu/Lark platform so credentials can be
 // written immediately.
@@ -1463,7 +1477,13 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 
 	data, err := os.ReadFile(ConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("read config: %w", err)
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("read config: %w", err)
+		}
+		if err := os.MkdirAll(filepath.Dir(ConfigPath), 0o755); err != nil {
+			return nil, fmt.Errorf("create config directory: %w", err)
+		}
+		data = []byte(defaultFeishuSetupConfigHeader)
 	}
 	raw := string(data)
 	cfg := &Config{}
@@ -1565,11 +1585,12 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 		return nil, err
 	}
 
+	projectIdx := len(cfg.Projects)
 	return &EnsureProjectWithFeishuResult{
 		Created:          true,
 		AddedPlatform:    false,
-		ProjectIndex:     len(cfg.Projects) - 1,
-		PlatformAbsIndex: len(cfg.Projects[len(cfg.Projects)-1].Platforms) - 1,
+		ProjectIndex:     projectIdx,
+		PlatformAbsIndex: 0,
 		PlatformType:     platformType,
 	}, nil
 }

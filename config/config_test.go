@@ -1257,6 +1257,45 @@ func TestEnsureProjectWithFeishuPlatform_CreatesMissingProject(t *testing.T) {
 	}
 }
 
+func TestEnsureProjectWithFeishuPlatform_CreatesConfigFileWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	patchConfigPath(t, configPath)
+
+	result, err := EnsureProjectWithFeishuPlatform(EnsureProjectWithFeishuOptions{
+		ProjectName:  "first-project",
+		PlatformType: "feishu",
+		WorkDir:      "/tmp/first-project",
+	})
+	if err != nil {
+		t.Fatalf("EnsureProjectWithFeishuPlatform returned error: %v", err)
+	}
+	if !result.Created {
+		t.Fatal("result.Created = false, want true")
+	}
+	if result.ProjectIndex != 0 || result.PlatformAbsIndex != 0 {
+		t.Fatalf("result indexes = (%d, %d), want (0, 0)", result.ProjectIndex, result.PlatformAbsIndex)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	if cfg.Language != "zh" {
+		t.Fatalf("Language = %q, want zh", cfg.Language)
+	}
+	if len(cfg.Projects) != 1 {
+		t.Fatalf("len(cfg.Projects) = %d, want 1", len(cfg.Projects))
+	}
+	proj := cfg.Projects[0]
+	if proj.Name != "first-project" {
+		t.Fatalf("proj.Name = %q, want first-project", proj.Name)
+	}
+	if got := stringMapValue(proj.Agent.Options, "work_dir"); got != "/tmp/first-project" {
+		t.Fatalf("work_dir = %q, want /tmp/first-project", got)
+	}
+	if len(proj.Platforms) != 1 || proj.Platforms[0].Type != "feishu" {
+		t.Fatalf("platforms = %+v, want one feishu platform", proj.Platforms)
+	}
+}
+
 func TestEnsureProjectWithFeishuPlatform_AddsPlatformWhenProjectExistsWithoutFeishu(t *testing.T) {
 	configPath := writeConfigFixture(t, projectWithoutFeishuFixture)
 	patchConfigPath(t, configPath)
