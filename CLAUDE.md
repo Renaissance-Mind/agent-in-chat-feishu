@@ -50,7 +50,7 @@ make build
 
 ## Documentation Rules
 
-- Keep the README split by language: `README.md` and `README.zh-CN.md`.
+- Keep the README split by language: `README.md` for Chinese by default and `README.en.md` for English.
 - Keep setup docs centered on `agentchat feishu setup`.
 - Do not document removed chat platform adapters as supported features.
 - Keep the cc-connect acknowledgement and MIT license.

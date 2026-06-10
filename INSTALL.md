@@ -1,6 +1,6 @@
 # Installation
 
-[English](README.md) | [中文](README.zh-CN.md)
+[中文](README.md) | [English](README.en.md)
 
 `agent-in-chat-feishu` installs the `agentchat` CLI. The package is Feishu/Lark-only, but keeps the cc-connect agent runtime and chat command surface.
 

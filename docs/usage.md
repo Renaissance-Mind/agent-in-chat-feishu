@@ -1,6 +1,6 @@
 # Usage Guide
 
-[English README](../README.md) | [中文 README](../README.zh-CN.md)
+[中文 README](../README.md) | [English README](../README.en.md)
 
 This guide covers the retained cc-connect runtime features in `agent-in-chat-feishu`. The chat platform surface is Feishu/Lark only; the agent, session, provider, command, daemon, cron, relay, webhook, and management features remain.
 

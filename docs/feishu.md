@@ -1,6 +1,6 @@
 # 飞书 / Lark 接入指南
 
-[English README](../README.md) | [中文 README](../README.zh-CN.md)
+[中文 README](../README.md) | [English README](../README.en.md)
 
 本文档介绍如何把 `agentchat` 接入飞书或 Lark。这个项目只保留 Feishu/Lark 聊天适配，但保留 cc-connect 的 Agent 运行时、会话、命令、进度卡片、附件、定时任务、relay、management API 和多 Agent 支持。
 

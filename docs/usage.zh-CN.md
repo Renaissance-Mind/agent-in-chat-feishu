@@ -1,6 +1,6 @@
 # 使用说明
 
-[English README](../README.md) | [中文 README](../README.zh-CN.md)
+[中文 README](../README.md) | [English README](../README.en.md)
 
 本文档说明 `agent-in-chat-feishu` 保留下来的 cc-connect 运行时能力。聊天平台只保留 Feishu/Lark；Agent、会话、模型提供方、命令、daemon、cron、relay、webhook 和 management API 能力继续保留。
 
