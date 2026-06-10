@@ -197,13 +197,14 @@ func main() {
 		providerWiring := wireAgentProviders(agent, proj.Agent)
 
 		var platforms []core.Platform
+		feishuPlatformIndex := 0
 		for _, pc := range proj.Platforms {
-			opts := make(map[string]any, len(pc.Options)+2)
-			for k, v := range pc.Options {
-				opts[k] = v
+			platformIndex := 0
+			if isFeishuLikePlatform(pc.Type) {
+				feishuPlatformIndex++
+				platformIndex = feishuPlatformIndex
 			}
-			opts["cc_data_dir"] = cfg.DataDir
-			opts["cc_project"] = proj.Name
+			opts := buildPlatformOptions(cfg.DataDir, proj, pc, platformIndex)
 			p, err := core.CreatePlatform(pc.Type, opts)
 			if err != nil {
 				slog.Error("failed to create platform", "project", proj.Name, "type", pc.Type, "error", err)
@@ -1117,6 +1118,7 @@ max_chars = 4000
 
 [[projects]]
 name = "my-project"
+admin_from = "" # setup usually fills this; use /whoami to edit manually
 reply_footer = false
 inject_sender = true
 show_context_indicator = false
@@ -1141,6 +1143,7 @@ app_id = "your-feishu-app-id"
 app_secret = "your-feishu-app-secret"
 allow_private_chats = ""
 allow_group_chats = ""
+auto_bind_chats = true
 group_reply_all = false
 share_session_in_channel = true
 thread_isolation = false
@@ -1351,8 +1354,14 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 
 	// Reload platform options that support hot reload, such as Feishu/Lark
 	// allow lists.
+	feishuPlatformIndex := 0
 	for _, pc := range proj.Platforms {
-		updated, err := engine.ReloadPlatformConfig(pc.Type, pc.Options)
+		platformIndex := 0
+		if isFeishuLikePlatform(pc.Type) {
+			feishuPlatformIndex++
+			platformIndex = feishuPlatformIndex
+		}
+		updated, err := engine.ReloadPlatformConfig(pc.Type, buildPlatformOptions(cfg.DataDir, *proj, pc, platformIndex))
 		if err != nil {
 			return nil, fmt.Errorf("reload platform %s: %w", pc.Type, err)
 		}
@@ -1475,6 +1484,29 @@ func buildAgentOptions(dataDir string, proj config.ProjectConfig) map[string]any
 	opts["cc_data_dir"] = dataDir
 	opts["cc_project"] = proj.Name
 	return opts
+}
+
+func buildPlatformOptions(dataDir string, proj config.ProjectConfig, pc config.PlatformConfig, feishuPlatformIndex int) map[string]any {
+	opts := make(map[string]any, len(pc.Options)+4)
+	for k, v := range pc.Options {
+		opts[k] = v
+	}
+	opts["cc_data_dir"] = dataDir
+	opts["cc_project"] = proj.Name
+	opts["cc_admin_from"] = proj.AdminFrom
+	if feishuPlatformIndex > 0 {
+		opts["cc_platform_index"] = feishuPlatformIndex
+	}
+	return opts
+}
+
+func isFeishuLikePlatform(platformType string) bool {
+	switch strings.ToLower(strings.TrimSpace(platformType)) {
+	case "feishu", "lark":
+		return true
+	default:
+		return false
+	}
 }
 
 func wireAgentProviders(agent core.Agent, agentCfg config.AgentConfig) providerWiringResult {

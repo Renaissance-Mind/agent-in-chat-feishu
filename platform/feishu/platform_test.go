@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 
+	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/core"
 	callback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -273,6 +276,81 @@ func TestFeishu_BindingRequiredMessageIncludesChatID(t *testing.T) {
 	privateMsg := p.bindingRequiredMessage("p2p", "oc_private", "ou_user")
 	if !strings.Contains(privateMsg, "oc_private") || !strings.Contains(privateMsg, "allow_private_chats") {
 		t.Fatalf("private binding message = %q, want chat id and allow_private_chats hint", privateMsg)
+	}
+}
+
+func TestFeishu_AutoBindsAdminFirstTrigger(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.toml")
+	if err := os.WriteFile(configPath, []byte(strings.TrimSpace(`
+[[projects]]
+name = "alpha"
+admin_from = "ou_admin"
+
+[projects.agent]
+type = "codex"
+
+[[projects.platforms]]
+type = "feishu"
+
+[projects.platforms.options]
+app_id = "cli_xxx"
+app_secret = "secret"
+allow_group_chats = ""
+`)+"\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldConfigPath := config.ConfigPath
+	config.ConfigPath = configPath
+	t.Cleanup(func() { config.ConfigPath = oldConfigPath })
+
+	pAny, err := New(map[string]any{
+		"app_id":                   "cli_xxx",
+		"app_secret":               "secret",
+		"cc_project":               "alpha",
+		"cc_admin_from":            "ou_admin",
+		"cc_platform_index":        1,
+		"allow_group_chats":        "",
+		"share_session_in_channel": true,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	p := pAny.(*interactivePlatform)
+	p.botOpenID = "ou_bot"
+
+	msgCh := make(chan *core.Message, 1)
+	p.handler = func(_ core.Platform, msg *core.Message) {
+		msgCh <- msg
+	}
+	mention := []*larkim.MentionEvent{{
+		Key: stringPtr("@bot"),
+		Id:  &larkim.UserId{OpenId: stringPtr("ou_bot")},
+	}}
+	if err := p.onMessage(context.Background(), feishuTextEvent("om_auto_bind", "oc_group", "ou_admin", "group", `{"text":"@bot hi"}`, mention)); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+
+	select {
+	case msg := <-msgCh:
+		if msg.SessionKey != "feishu:oc_group" {
+			t.Fatalf("SessionKey = %q, want feishu:oc_group", msg.SessionKey)
+		}
+		if msg.Content != "hi" {
+			t.Fatalf("Content = %q, want hi", msg.Content)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected auto-bound group message to be handled")
+	}
+	if !p.chatBound("group", "oc_group") {
+		t.Fatal("chatBound(group, oc_group) = false, want true after auto-bind")
+	}
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(raw), `allow_group_chats = "oc_group"`) {
+		t.Fatalf("config does not contain persisted group binding:\n%s", raw)
 	}
 }
 

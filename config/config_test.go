@@ -1188,6 +1188,68 @@ func TestSaveFeishuPlatformCredentials_ReturnsIndexRangeError(t *testing.T) {
 	}
 }
 
+func TestAddFeishuChatBinding_AppendsBindingAndIsIdempotent(t *testing.T) {
+	configPath := writeConfigFixture(t, feishuConfigFixture)
+	patchConfigPath(t, configPath)
+
+	result, err := AddFeishuChatBinding(FeishuChatBindingUpdateOptions{
+		ProjectName:   "alpha",
+		PlatformIndex: 1,
+		ChatType:      "group",
+		ChatID:        "oc_new",
+	})
+	if err != nil {
+		t.Fatalf("AddFeishuChatBinding returned error: %v", err)
+	}
+	if result.Key != "allow_group_chats" || result.Value != "oc_new" || !result.Added {
+		t.Fatalf("result = %+v, want group binding oc_new added", result)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	if got := stringMapValue(cfg.Projects[0].Platforms[1].Options, "allow_group_chats"); got != "oc_new" {
+		t.Fatalf("allow_group_chats = %q, want oc_new", got)
+	}
+
+	result, err = AddFeishuChatBinding(FeishuChatBindingUpdateOptions{
+		ProjectName:   "alpha",
+		PlatformIndex: 1,
+		ChatType:      "group",
+		ChatID:        "oc_new",
+	})
+	if err != nil {
+		t.Fatalf("second AddFeishuChatBinding returned error: %v", err)
+	}
+	if result.Value != "oc_new" || result.Added {
+		t.Fatalf("second result = %+v, want idempotent value without Added", result)
+	}
+}
+
+func TestAddFeishuChatBinding_TargetsIndexedPlatform(t *testing.T) {
+	configPath := writeConfigFixture(t, feishuConfigFixture)
+	patchConfigPath(t, configPath)
+
+	result, err := AddFeishuChatBinding(FeishuChatBindingUpdateOptions{
+		ProjectName:   "alpha",
+		PlatformIndex: 2,
+		ChatType:      "p2p",
+		ChatID:        "oc_private",
+	})
+	if err != nil {
+		t.Fatalf("AddFeishuChatBinding returned error: %v", err)
+	}
+	if result.PlatformAbsIndex != 2 || result.Key != "allow_private_chats" {
+		t.Fatalf("result = %+v, want second feishu/lark platform private binding", result)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	if got := stringMapValue(cfg.Projects[0].Platforms[2].Options, "allow_private_chats"); got != "oc_private" {
+		t.Fatalf("allow_private_chats = %q, want oc_private", got)
+	}
+	if got := stringMapValue(cfg.Projects[0].Platforms[1].Options, "allow_private_chats"); got != "" {
+		t.Fatalf("first platform allow_private_chats = %q, want untouched", got)
+	}
+}
+
 func TestEnsureProjectWithFeishuPlatform_CreatesMissingProject(t *testing.T) {
 	configPath := writeConfigFixture(t, feishuConfigFixture)
 	patchConfigPath(t, configPath)

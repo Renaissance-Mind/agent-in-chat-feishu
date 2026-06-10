@@ -323,6 +323,15 @@ allow_group_chats = "oc_new"
 	if got, _ := platform.lastOption["allow_group_chats"].(string); got != "oc_new" {
 		t.Fatalf("allow_group_chats = %q, want oc_new", got)
 	}
+	if got, _ := platform.lastOption["cc_project"].(string); got != "demo" {
+		t.Fatalf("cc_project = %q, want demo", got)
+	}
+	if got, _ := platform.lastOption["cc_admin_from"].(string); got != "ou_admin" {
+		t.Fatalf("cc_admin_from = %q, want ou_admin", got)
+	}
+	if got, _ := platform.lastOption["cc_platform_index"].(int); got != 1 {
+		t.Fatalf("cc_platform_index = %v, want 1", platform.lastOption["cc_platform_index"])
+	}
 }
 
 func TestProjectReplyFooterEnabledDefaultsOff(t *testing.T) {

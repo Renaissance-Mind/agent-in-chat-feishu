@@ -9,6 +9,7 @@ This guide covers the retained cc-connect runtime features in `agent-in-chat-fei
 ```bash
 agentchat feishu setup --project my-project
 agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
+agentchat feishu permissions --project my-project
 ```
 
 Then start:

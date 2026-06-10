@@ -24,9 +24,9 @@ agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 agentchat
 ```
 
-`setup` 会自动准备项目配置。如果 `--project` 不存在，会创建项目；如果项目里没有 Feishu/Lark 平台，会自动补一个。
+`setup` 会自动准备项目配置。如果 `--project` 不存在，会创建项目；如果项目里没有 Feishu/Lark 平台，会自动补一个。命令完成时还会打印权限申请、权限后台和事件订阅直达链接。
 
-新项目默认使用聊天绑定，而不是 allow-all。把机器人拉进群或发起私聊后，第一次触发会返回 `chat_id`；把这个 ID 加到 `allow_group_chats` 或 `allow_private_chats`，再执行 `agentchat config reload`。
+新项目默认使用聊天绑定，而不是 allow-all。如果已设置 `admin_from`，管理员把机器人拉进群或发起私聊后，第一次有效触发会自动绑定该会话并持久化 `chat_id`；如果不是管理员触发，机器人会返回需要加入 `allow_group_chats` 或 `allow_private_chats` 的 `chat_id`。
 
 ## 创建机器人
 
@@ -36,9 +36,9 @@ agentchat
 agentchat feishu setup --project my-project
 ```
 
-终端会打印二维码和 URL。用飞书/Lark 手机 App 扫码后，注册流程通常会创建机器人应用，并预配核心权限和事件订阅。
+终端会打印二维码和 URL。用飞书/Lark 手机 App 扫码后，注册流程通常会创建机器人应用，并预配核心能力。命令结束时会打印 `scope-apply` 权限申请链接，链接里已经预选推荐 scopes。
 
-完成后建议到开放平台核验：
+完成后建议按终端链接核验：
 
 - 应用已经发布
 - 机器人能力已启用
@@ -52,7 +52,13 @@ agentchat feishu setup --project my-project
 agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 ```
 
-这会校验 `app_id/app_secret`，然后写入 `config.toml`。它不会替你修改已有应用的权限申请；你需要在开放平台核验并补齐权限。
+这会校验 `app_id/app_secret`，然后写入 `config.toml`。它不会直接修改已有应用的权限申请，但会打印带预选 scope 的权限申请链接，以及对应的权限后台和事件订阅页面。
+
+之后可随时重新打印这些链接：
+
+```bash
+agentchat feishu permissions --project my-project
+```
 
 开放平台入口：
 
@@ -86,6 +92,7 @@ app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
 allow_private_chats = ""
 allow_group_chats = ""
+auto_bind_chats = true
 group_reply_all = false
 share_session_in_channel = true
 group_context_buffer = true
@@ -103,6 +110,7 @@ reaction_emoji = "OnIt"
 |---|---|
 | `allow_group_chats` | 允许访问的群聊 chat_id；默认空字符串表示未绑定任何群 |
 | `allow_private_chats` | 允许访问的私聊 chat_id；默认空字符串表示未绑定任何私聊 |
+| `auto_bind_chats` | `true` 时允许 `admin_from` 用户首次有效触发时自动绑定群聊或私聊 |
 | `allow_from` | 允许访问的用户 open_id，`*` 表示所有人 |
 | `group_reply_all` | `false` 时群里只有 @ 机器人才触发 |
 | `share_session_in_channel` | 群内共享一个 Agent 会话 |
@@ -154,13 +162,19 @@ Alex：看一下最近上下文，帮我们判断先修哪一个。
 |---|---|
 | 接收群里 @ 机器人消息 | `im.message.receive_v1`，并具备群 @ 消息接收权限 |
 | 接收私聊消息 | `im.message.receive_v1`，并具备单聊消息接收权限 |
-| 拉取群历史上下文 | 群消息历史权限，包含 `im:message.group_msg` |
-| 发送消息 | `im:message:send_as_bot` 或更宽的 `im:message` |
-| 回复消息 | `im:message:send_as_bot` 或更宽的 `im:message` |
-| 添加/删除表情回复 | 消息表情回复权限，或更宽的 `im:message` |
-| 上传图片/文件 | 图片/文件资源上传权限 |
-| 读取群成员名称 | 群信息/群成员权限，例如 `im:chat` |
+| 拉取群历史上下文和引用消息 | `im:message`、`im:message:readonly`、`im:message.group_msg` |
+| 发送消息 | `im:message` 或 `im:message:send_as_bot` |
+| 回复消息 | `im:message` 或 `im:message:send_as_bot` |
+| 更新进度/状态卡片 | `im:message:update` |
+| 撤回临时预览消息 | `im:message:recall` |
+| 添加/删除表情回复 | `im:message.reactions:write_only` |
+| 上传/下载图片和文件 | `im:resource` 和 `im:resource:upload` |
+| 读取群成员名称 | `im:chat.members:read` 或更宽的群信息权限 |
+| 读取用户名称 | `contact:user.base:readonly` |
 | 交互卡片按钮 | 事件 `card.action.trigger` |
+| 机器人自定义菜单回调 | 事件 `application.bot.menu_v6` |
+
+`setup` 打印的权限申请链接会预选运行时推荐 scopes：`im:message`、`im:message:readonly`、`im:message:send_as_bot`、`im:message:update`、`im:message:recall`、`im:message.group_msg`、`im:message.reactions:write_only`、`im:resource`、`im:resource:upload`、`im:chat:readonly`、`im:chat.members:read` 和 `contact:user.base:readonly`。如果运行时仍缺权限，日志会包含缺失 scope 和对应的直达申请链接。
 
 官方参考：
 
@@ -182,6 +196,7 @@ Alex：看一下最近上下文，帮我们判断先修哪一个。
 |---|---|
 | `im.message.receive_v1` | 接收用户消息 |
 | `card.action.trigger` | 处理权限确认、provider 切换等卡片按钮 |
+| `application.bot.menu_v6` | 处理机器人自定义菜单的事件回调；如果菜单项配置成直接发送文字，则不是必需 |
 
 如果暂时无法配置卡片回调，可以设置：
 

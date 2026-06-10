@@ -89,9 +89,9 @@ agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 agentchat
 ```
 
-默认使用 `setup`。扫码新建通常会创建机器人应用，并预配所需权限和事件订阅。关联已有应用时，先执行 `setup --app ...`，再到飞书开放平台核验权限、事件订阅、发布状态和可用范围。
+默认使用 `setup`。它会写入项目/平台配置，并打印该应用的权限和事件直达链接。扫码新建通常会创建机器人应用并预配核心能力；关联已有应用时，打开终端打印的权限申请链接，确认已预选的 scopes，再核验长连接事件订阅。如果飞书提示需要发布新版本，补权限或事件后要创建版本并发布。之后也可以用 `agentchat feishu permissions --project my-project` 重新打印这些链接。
 
-新项目默认使用聊天绑定。未绑定群聊或私聊第一次触发时会被拒绝，并返回 `chat_id`；把这个 ID 加到 `allow_group_chats` 或 `allow_private_chats` 后，执行 `agentchat config reload`。
+新项目默认使用聊天绑定。如果已设置 `admin_from`，管理员第一次在群聊或私聊中有效触发机器人时会自动绑定该会话并持久化 `chat_id`；如果不是管理员触发，机器人会返回需要加入 `allow_group_chats` 或 `allow_private_chats` 的 `chat_id`。
 
 后台服务模式：
 
@@ -125,6 +125,7 @@ max_chars = 4000
 
 [[projects]]
 name = "my-project"
+admin_from = ""
 show_context_indicator = false
 
 [projects.agent]
@@ -144,6 +145,7 @@ app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
 allow_private_chats = ""
 allow_group_chats = ""
+auto_bind_chats = true
 group_context_buffer = true
 context_buffer_max_messages = 100
 context_buffer_max_age_mins = 0
@@ -162,12 +164,18 @@ reaction_emoji = "OnIt"
 |---|---|
 | 接收群里 @ 机器人消息 | `im.message.receive_v1` 和群 @ 消息权限 |
 | 接收单聊消息 | `im.message.receive_v1` 和单聊消息权限 |
-| 拉取最近群历史 | 群消息历史 / `im:message.group_msg` |
-| 发送和回复消息 | `im:message:send_as_bot` 或更宽的 `im:message` |
-| 自动添加/移除表情 | 消息表情权限或更宽的 `im:message` |
-| 上传图片/文件附件 | 图片/文件资源上传权限 |
-| 解析群成员名称 | 群信息/群成员权限，例如 `im:chat` |
+| 拉取最近群历史和引用消息 | `im:message`、`im:message:readonly`、`im:message.group_msg` |
+| 发送和回复消息 | `im:message` 或 `im:message:send_as_bot` |
+| 更新进度/状态卡片 | `im:message:update` |
+| 撤回临时预览消息 | `im:message:recall` |
+| 自动添加/移除表情 | `im:message.reactions:write_only` |
+| 上传/下载图片和文件附件 | `im:resource` 和 `im:resource:upload` |
+| 解析群成员名称 | `im:chat.members:read` 或更宽的群信息权限 |
+| 解析用户名称 | `contact:user.base:readonly` |
 | 使用交互卡片 | 卡片回调事件 `card.action.trigger` |
+| 使用机器人自定义菜单回调 | 机器人菜单事件 `application.bot.menu_v6` |
+
+`setup` 会打印飞书/Lark 的 `scope-apply` 链接，并预选运行时推荐 scopes：`im:message`、`im:message:readonly`、`im:message:send_as_bot`、`im:message:update`、`im:message:recall`、`im:message.group_msg`、`im:message.reactions:write_only`、`im:resource`、`im:resource:upload`、`im:chat:readonly`、`im:chat.members:read` 和 `contact:user.base:readonly`。
 
 官方参考：[发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[回复消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply)、[接收消息事件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive)、[会话历史](https://open.feishu.cn/document/server-docs/im-v1/message/list)、[表情回复](https://open.feishu.cn/document/server-docs/im-v1/message-reaction/create?lang=zh-CN)、[群成员列表](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/chat-members/get)、[上传图片](https://open.feishu.cn/document/server-docs/im-v1/image/create)。
 

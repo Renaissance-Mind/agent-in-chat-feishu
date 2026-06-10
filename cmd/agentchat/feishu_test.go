@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
 )
 
 func TestResolveFeishuSetupInputs_AutoModeWithoutCredentialsUsesNew(t *testing.T) {
@@ -72,6 +74,64 @@ func TestSetupOwnerOpenIDForConfigKeepsUserOpenID(t *testing.T) {
 	got := setupOwnerOpenIDForConfig(" ou_user ", "ou_bot")
 	if got != "ou_user" {
 		t.Fatalf("setupOwnerOpenIDForConfig = %q, want trimmed user open_id", got)
+	}
+}
+
+func TestResolveFeishuPermissionTargetReadsConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	workDir := filepath.Join(dir, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("mkdir work dir: %v", err)
+	}
+	content := strings.ReplaceAll(`
+language = "zh"
+
+[[projects]]
+name = "demo"
+
+[projects.agent]
+type = "codex"
+
+[projects.agent.options]
+work_dir = "__WORK_DIR__"
+
+[[projects.platforms]]
+type = "feishu"
+
+[projects.platforms.options]
+app_id = "cli_feishu"
+app_secret = "sec_feishu"
+
+[[projects.platforms]]
+type = "lark"
+
+[projects.platforms.options]
+app_id = "cli_lark"
+app_secret = "sec_lark"
+`, "__WORK_DIR__", workDir)
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	prev := config.ConfigPath
+	config.ConfigPath = configPath
+	t.Cleanup(func() { config.ConfigPath = prev })
+
+	appID, platformType, err := resolveFeishuPermissionTarget("demo", "lark", 0)
+	if err != nil {
+		t.Fatalf("resolveFeishuPermissionTarget returned error: %v", err)
+	}
+	if appID != "cli_lark" || platformType != "lark" {
+		t.Fatalf("target = (%q, %q), want (cli_lark, lark)", appID, platformType)
+	}
+
+	appID, platformType, err = resolveFeishuPermissionTarget("demo", "", 2)
+	if err != nil {
+		t.Fatalf("resolveFeishuPermissionTarget with index returned error: %v", err)
+	}
+	if appID != "cli_lark" || platformType != "lark" {
+		t.Fatalf("indexed target = (%q, %q), want (cli_lark, lark)", appID, platformType)
 	}
 }
 

@@ -89,9 +89,9 @@ Then run the bridge:
 agentchat
 ```
 
-`setup` is the default path. QR onboarding usually creates the bot app with the needed Feishu capabilities and event subscriptions. When binding an existing app, run `setup --app ...`, then verify the permissions and event subscription in the Feishu developer console.
+`setup` is the default path. It writes the project/platform config and prints direct permission/event links for the app. QR onboarding usually creates the bot app with core capabilities; when binding an existing app, open the printed scope-apply link, confirm the preselected scopes, verify long-connection events, then publish a new app version if Feishu asks for one. You can reprint the links later with `agentchat feishu permissions --project my-project`.
 
-New projects default to chat binding. The first mention from an unbound group or DM is rejected with its `chat_id`; add that ID to `allow_group_chats` or `allow_private_chats`, then run `agentchat config reload`.
+New projects default to chat binding. If `admin_from` is set, the first valid trigger from an admin automatically binds that group or DM and persists its `chat_id`; without an admin match, the bot replies with the `chat_id` to add to `allow_group_chats` or `allow_private_chats`.
 
 For background service mode:
 
@@ -126,6 +126,7 @@ max_chars = 4000
 
 [[projects]]
 name = "my-project"
+admin_from = ""
 show_context_indicator = false
 
 [projects.agent]
@@ -145,6 +146,7 @@ app_id = "${FEISHU_APP_ID}"
 app_secret = "${FEISHU_APP_SECRET}"
 allow_private_chats = ""
 allow_group_chats = ""
+auto_bind_chats = true
 group_context_buffer = true
 context_buffer_max_messages = 100
 context_buffer_max_age_mins = 0
@@ -163,12 +165,18 @@ For a full bot that behaves like the current runtime, enable robot capability, l
 |---|---|
 | Receive group mentions | `im.message.receive_v1` with group mention message permission |
 | Receive direct messages | `im.message.receive_v1` with p2p message permission |
-| Fetch recent group history | group message history / `im:message.group_msg` |
-| Send and reply | `im:message:send_as_bot` or broader `im:message` |
-| Add/remove reactions | message reaction permission or broader `im:message` |
-| Upload image/file attachments | image/file resource upload permission |
-| Resolve names from group members | group info/member permission such as `im:chat` |
+| Fetch recent group history and quoted messages | `im:message`, `im:message:readonly`, `im:message.group_msg` |
+| Send and reply | `im:message` or `im:message:send_as_bot` |
+| Update progress/card messages | `im:message:update` |
+| Recall transient preview messages | `im:message:recall` |
+| Add/remove reactions | `im:message.reactions:write_only` |
+| Upload/download image/file attachments | `im:resource` and `im:resource:upload` |
+| Resolve names from group members | `im:chat.members:read` or broader group info scopes |
+| Resolve user names | `contact:user.base:readonly` |
 | Use interactive cards | card callback event `card.action.trigger` |
+| Use bot custom menu callbacks | bot menu event `application.bot.menu_v6` |
+
+The setup command prints a Feishu/Lark `scope-apply` URL with the recommended runtime scopes preselected: `im:message`, `im:message:readonly`, `im:message:send_as_bot`, `im:message:update`, `im:message:recall`, `im:message.group_msg`, `im:message.reactions:write_only`, `im:resource`, `im:resource:upload`, `im:chat:readonly`, `im:chat.members:read`, and `contact:user.base:readonly`.
 
 Official references: [send messages](https://open.feishu.cn/document/server-docs/im-v1/message/create), [reply](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply), [receive event](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive), [history](https://open.feishu.cn/document/server-docs/im-v1/message/list), [reactions](https://open.feishu.cn/document/server-docs/im-v1/message-reaction/create?lang=zh-CN), [group members](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/chat-members/get), [image upload](https://open.feishu.cn/document/server-docs/im-v1/image/create).
 

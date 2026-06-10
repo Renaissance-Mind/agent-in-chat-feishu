@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
+	"github.com/Renaissance-Mind/agent-in-chat-feishu/core"
 	qrterminal "github.com/mdp/qrterminal/v3"
 	"rsc.io/qr"
 )
@@ -99,6 +100,8 @@ func runFeishu(args []string) {
 		runFeishuSetup(args[1:], feishuSetupModeNew)
 	case "bind", "link":
 		runFeishuSetup(args[1:], feishuSetupModeBind)
+	case "permissions", "permission", "scopes":
+		runFeishuPermissions(args[1:])
 	case "help", "--help", "-h":
 		printFeishuUsage()
 	default:
@@ -242,6 +245,7 @@ func runFeishuSetup(args []string, requestedMode string) {
 	}
 
 	printBotMenuGuidance(saveResult.PlatformType)
+	printFeishuPermissionGuidance(saveResult.PlatformType, resolvedAppID)
 
 	fmt.Println("提醒：扫码新建通常会自动预配权限与事件订阅；请在开放平台核验发布状态与可用范围。")
 }
@@ -266,8 +270,8 @@ func printAllowFromGuidance(ownerOpenID, botOpenID string, result *config.Feishu
 	}
 
 	if result.AllowFrom == "" {
-		fmt.Println("💡 默认使用聊天绑定：未绑定群聊/私聊会被拒绝，并回复 chat_id。")
-		fmt.Println("   把对应 ID 加到 config.toml 的 allow_group_chats 或 allow_private_chats 后，执行 `agentchat config reload`。")
+		fmt.Println("💡 默认使用聊天绑定：已设置 admin_from 时，管理员首次有效触发会自动绑定群聊/私聊。")
+		fmt.Println("   非管理员触发未绑定会话时，会回复 chat_id；也可手动加入 allow_group_chats 或 allow_private_chats。")
 		fmt.Println("   如还需要按用户限制，可发送 /whoami 获取 User ID，再设置 allow_from / admin_from。")
 		fmt.Println()
 	}
@@ -365,6 +369,116 @@ func printBotMenuGuidance(platformType string) {
 	fmt.Println()
 }
 
+func runFeishuPermissions(args []string) {
+	fs := flag.NewFlagSet("feishu permissions", flag.ExitOnError)
+	configFile := fs.String("config", "", "path to config file")
+	project := fs.String("project", "", "project name (optional if only one project)")
+	platformIndex := fs.Int("platform-index", 0, "1-based index among feishu/lark platforms in the project (0 = first)")
+	platformType := fs.String("platform-type", "", "force platform type: feishu or lark")
+	appID := fs.String("app-id", "", "app_id override; if omitted, read from config")
+	_ = fs.Parse(args)
+
+	initConfigPath(*configFile)
+
+	normalizedType, err := normalizeFeishuPlatformType(*platformType)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	resolvedAppID := strings.TrimSpace(*appID)
+	resolvedPlatformType := normalizedType
+	if resolvedAppID == "" {
+		resolvedAppID, resolvedPlatformType, err = resolveFeishuPermissionTarget(*project, normalizedType, *platformIndex)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if resolvedPlatformType == "" {
+		resolvedPlatformType = "feishu"
+	}
+	if resolvedAppID == "" {
+		fmt.Fprintln(os.Stderr, "Error: app_id is empty; pass --app-id or configure a Feishu/Lark platform first")
+		os.Exit(1)
+	}
+	printFeishuPermissionGuidance(resolvedPlatformType, resolvedAppID)
+}
+
+func resolveFeishuPermissionTarget(projectName, platformType string, platformIndex int) (appID, resolvedPlatformType string, err error) {
+	if platformIndex < 0 {
+		return "", "", fmt.Errorf("platform index must be >= 0")
+	}
+	targetProject, err := resolveTargetProject(projectName)
+	if err != nil {
+		return "", "", err
+	}
+	cfg, err := config.Load(config.ConfigPath)
+	if err != nil {
+		return "", "", err
+	}
+	for _, project := range cfg.Projects {
+		if project.Name != targetProject {
+			continue
+		}
+		candidates := make([]config.PlatformConfig, 0, len(project.Platforms))
+		for _, platform := range project.Platforms {
+			kind := strings.ToLower(strings.TrimSpace(platform.Type))
+			if kind != "feishu" && kind != "lark" {
+				continue
+			}
+			if platformType != "" && kind != platformType {
+				continue
+			}
+			candidates = append(candidates, platform)
+		}
+		if len(candidates) == 0 {
+			if platformType != "" {
+				return "", "", fmt.Errorf("project %q has no %s platform", targetProject, platformType)
+			}
+			return "", "", fmt.Errorf("project %q has no feishu/lark platform", targetProject)
+		}
+		targetPos := 0
+		if platformIndex > 0 {
+			targetPos = platformIndex - 1
+		}
+		if targetPos < 0 || targetPos >= len(candidates) {
+			return "", "", fmt.Errorf(
+				"platform index %d out of range: project %q has %d matching Feishu/Lark platform(s)",
+				platformIndex, targetProject, len(candidates),
+			)
+		}
+		platform := candidates[targetPos]
+		appID, _ := platform.Options["app_id"].(string)
+		return strings.TrimSpace(appID), strings.ToLower(strings.TrimSpace(platform.Type)), nil
+	}
+	return "", "", fmt.Errorf("project %q not found", targetProject)
+}
+
+func printFeishuPermissionGuidance(platformType, appID string) {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return
+	}
+	scopes := core.FeishuRecommendedBotScopes()
+	events := core.FeishuRecommendedBotEvents()
+
+	fmt.Println("🔐 权限与事件配置：")
+	fmt.Printf("   权限申请直达链接: %s\n", core.FeishuScopeApplyURL(platformType, appID, scopes))
+	fmt.Printf("   权限后台: %s\n", core.FeishuPermissionConsoleURL(platformType, appID))
+	fmt.Printf("   事件订阅: %s\n", core.FeishuEventConsoleURL(platformType, appID))
+	fmt.Println("   需要的权限 scopes:")
+	for _, scope := range scopes {
+		fmt.Printf("     - %s\n", scope)
+	}
+	fmt.Println("   需要的事件:")
+	for _, event := range events {
+		fmt.Printf("     - %s\n", event)
+	}
+	fmt.Println("   确认使用「长连接」接收事件；权限或事件变更后，创建新版本并发布。")
+	fmt.Println()
+}
+
 func printFeishuUsage() {
 	fmt.Println(`Usage: agentchat feishu <command> [options]
 
@@ -372,6 +486,8 @@ Commands:
   setup   Unified entry: no credentials => NEW flow; with --app/--app-id => BIND flow
   new     Force NEW flow (QR onboarding). Rejects --app/--app-id.
   bind    Force BIND flow (requires app_id/app_secret).
+  permissions
+          Print direct permission/event links for an existing config or app_id.
 
 Options:
   --config <path>             Path to config file
@@ -393,6 +509,9 @@ Examples:
 
   # Equivalent to "setup --app ..."
   agentchat feishu bind --project my-project --app cli_xxx:sec_xxx
+
+  # Print direct permission/event links for an existing app
+  agentchat feishu permissions --project my-project
 
   # Use only when you must force QR onboarding
   agentchat feishu new --project my-project --platform-type lark`)

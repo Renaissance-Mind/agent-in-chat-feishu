@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/core"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -133,6 +134,10 @@ type Platform struct {
 	domain                     string
 	appID                      string
 	appSecret                  string
+	projectName                string
+	adminFrom                  string
+	configPlatformIndex        int
+	autoBindChats              bool
 	progressStyle              string
 	useInteractiveCard         bool
 	self                       core.Platform
@@ -170,6 +175,7 @@ type Platform struct {
 	groupHistoryMu     sync.Mutex
 	groupHistoryByChat map[string]*groupHistoryCache
 	groupHistoryFetch  groupHistoryFetchFunc
+	permissionHintOnce sync.Map
 	// Webhook mode fields (for Lark international version)
 	server       *http.Server
 	port         string
@@ -223,10 +229,16 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 		doneEmoji = ""
 	}
 	allowFrom, _ := opts["allow_from"].(string)
+	adminFrom, _ := opts["cc_admin_from"].(string)
+	configPlatformIndex := intOption(opts["cc_platform_index"], 0)
 	allowPrivateChats, allowPrivateChatsSet := stringListOption(opts, "allow_private_chats", "allow_private_chat_ids")
 	allowGroupChats, allowGroupChatsSet := stringListOption(opts, "allow_group_chats", "allow_group_chat_ids")
 	if !allowPrivateChatsSet || !allowGroupChatsSet {
 		core.CheckAllowFrom(name, allowFrom)
+	}
+	autoBindChats := true
+	if v, ok := opts["auto_bind_chats"].(bool); ok {
+		autoBindChats = v
 	}
 	groupReplyAll, _ := opts["group_reply_all"].(bool)
 	respondToAtEveryoneAndHere, _ := opts["respond_to_at_everyone_and_here"].(bool)
@@ -287,6 +299,10 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 		domain:                     domain,
 		appID:                      appID,
 		appSecret:                  appSecret,
+		projectName:                projectName,
+		adminFrom:                  adminFrom,
+		configPlatformIndex:        configPlatformIndex,
+		autoBindChats:              autoBindChats,
 		progressStyle:              progressStyle,
 		useInteractiveCard:         useInteractiveCard,
 		reactionEmoji:              reactionEmoji,
@@ -333,6 +349,8 @@ func (p *Platform) tag() string { return p.platformName }
 
 func (p *Platform) ReloadPlatformConfig(opts map[string]any) error {
 	allowFrom, _ := opts["allow_from"].(string)
+	projectName, _ := opts["cc_project"].(string)
+	adminFrom, _ := opts["cc_admin_from"].(string)
 	allowPrivateChats, allowPrivateChatsSet := stringListOption(opts, "allow_private_chats", "allow_private_chat_ids")
 	allowGroupChats, allowGroupChatsSet := stringListOption(opts, "allow_group_chats", "allow_group_chat_ids")
 	if !allowPrivateChatsSet || !allowGroupChatsSet {
@@ -342,9 +360,17 @@ func (p *Platform) ReloadPlatformConfig(opts map[string]any) error {
 	groupContextBuffer := p.groupContextBuffer
 	currentMaxMessages := p.contextBufferMaxMessages
 	currentMaxAgeMins := int(p.contextBufferMaxAge / time.Minute)
+	autoBindChats := p.autoBindChats
+	configPlatformIndex := p.configPlatformIndex
 	p.configMu.RUnlock()
 	if v, ok := opts["group_context_buffer"].(bool); ok {
 		groupContextBuffer = v
+	}
+	if v, ok := opts["auto_bind_chats"].(bool); ok {
+		autoBindChats = v
+	}
+	if v, ok := opts["cc_platform_index"]; ok {
+		configPlatformIndex = intOption(v, configPlatformIndex)
 	}
 	contextBufferMaxMessages := intOption(opts["context_buffer_max_messages"], currentMaxMessages)
 	if contextBufferMaxMessages < 1 {
@@ -357,6 +383,10 @@ func (p *Platform) ReloadPlatformConfig(opts map[string]any) error {
 
 	p.configMu.Lock()
 	p.allowFrom = allowFrom
+	p.projectName = projectName
+	p.adminFrom = adminFrom
+	p.configPlatformIndex = configPlatformIndex
+	p.autoBindChats = autoBindChats
 	p.allowPrivateChats = allowPrivateChats
 	p.allowPrivateChatsSet = allowPrivateChatsSet
 	p.allowGroupChats = allowGroupChats
@@ -838,11 +868,16 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 	sessionKey := p.makeSessionKey(msg, chatID, userID)
 	rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
 	if p.chatBindingConfigured(chatType) && !p.chatBound(chatType, chatID) {
-		if p.shouldPromptForBinding(chatType, mentioned, atEveryone) {
-			p.replyBindingRequired(ctx, rctx, chatType, chatID, userID)
+		shouldPrompt := p.shouldPromptForBinding(chatType, mentioned, atEveryone)
+		if shouldPrompt && p.tryAutoBindChat(ctx, chatType, chatID, userID) {
+			slog.Info(p.tag()+": auto-bound chat", "chat_id", chatID, "chat_type", chatType, "user", userID)
+		} else {
+			if shouldPrompt {
+				p.replyBindingRequired(ctx, rctx, chatType, chatID, userID)
+			}
+			slog.Debug(p.tag()+": message from unbound chat", "chat_id", chatID, "chat_type", chatType, "user", userID)
+			return nil
 		}
-		slog.Debug(p.tag()+": message from unbound chat", "chat_id", chatID, "chat_type", chatType, "user", userID)
-		return nil
 	}
 	if chatType == "group" && !p.groupReplyAll && p.botOpenID != "" {
 		if !mentioned {
@@ -912,6 +947,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 	historyPrefix := ""
 	if includeGroupHistory {
 		if err := p.syncGroupHistory(ctx, chatID); err != nil {
+			p.logPermissionHint(ctx, "group history", err)
 			slog.Warn(p.tag()+": group history sync failed", "chat_id", chatID, "error", err)
 		}
 		historyPrefix = p.renderGroupHistoryContext(chatID, messageID)
@@ -1249,6 +1285,7 @@ func (p *Platform) refreshChatMemberEntry(ctx context.Context, chatID string) *c
 	}
 	entry, err := p.fetchChatMembers(ctx, chatID)
 	if err != nil {
+		p.logPermissionHint(ctx, "chat member lookup", err)
 		slog.Debug(p.tag()+": fetch chat members failed", "chat_id", chatID, "error", err)
 		return nil
 	}
@@ -2746,11 +2783,70 @@ func (p *Platform) allowFromSnapshot() string {
 	return p.allowFrom
 }
 
+func (p *Platform) logPermissionHint(ctx context.Context, operation string, err error) {
+	if err == nil {
+		return
+	}
+	scopes := core.FeishuScopesFromPermissionError(err.Error())
+	if len(scopes) == 0 {
+		return
+	}
+	key := operation + ":" + strings.Join(scopes, ",")
+	if _, loaded := p.permissionHintOnce.LoadOrStore(key, struct{}{}); loaded {
+		return
+	}
+	slog.WarnContext(ctx, p.tag()+": missing Feishu app permission",
+		"operation", operation,
+		"scopes", strings.Join(scopes, ","),
+		"scope_apply_url", core.FeishuScopeApplyURL(p.platformName, p.appID, scopes),
+		"permission_console_url", core.FeishuPermissionConsoleURL(p.platformName, p.appID),
+	)
+}
+
 func (p *Platform) shouldPromptForBinding(chatType string, mentioned, atEveryone bool) bool {
 	if chatType != "group" {
 		return true
 	}
 	return p.groupReplyAll || mentioned || atEveryone || p.botOpenID == ""
+}
+
+func (p *Platform) tryAutoBindChat(ctx context.Context, chatType, chatID, userID string) bool {
+	if chatID == "" || userID == "" {
+		return false
+	}
+	p.configMu.RLock()
+	enabled := p.autoBindChats
+	projectName := p.projectName
+	adminFrom := p.adminFrom
+	platformIndex := p.configPlatformIndex
+	p.configMu.RUnlock()
+
+	if !enabled || strings.TrimSpace(projectName) == "" || !core.AllowList(adminFrom, userID) {
+		return false
+	}
+
+	result, err := config.AddFeishuChatBinding(config.FeishuChatBindingUpdateOptions{
+		ProjectName:   projectName,
+		PlatformIndex: platformIndex,
+		ChatType:      chatType,
+		ChatID:        chatID,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, p.tag()+": auto-bind chat failed", "chat_id", chatID, "chat_type", chatType, "user", userID, "error", err)
+		return false
+	}
+
+	p.configMu.Lock()
+	if chatType == "group" {
+		p.allowGroupChats = result.Value
+		p.allowGroupChatsSet = true
+	} else {
+		p.allowPrivateChats = result.Value
+		p.allowPrivateChatsSet = true
+	}
+	p.configMu.Unlock()
+
+	return true
 }
 
 func (p *Platform) replyBindingRequired(ctx context.Context, rctx replyContext, chatType, chatID, userID string) {

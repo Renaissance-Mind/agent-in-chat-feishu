@@ -1438,6 +1438,25 @@ type FeishuCredentialUpdateResult struct {
 	AdminFrom        string
 }
 
+// FeishuChatBindingUpdateOptions controls how a discovered Feishu/Lark chat is
+// persisted into a platform binding list.
+type FeishuChatBindingUpdateOptions struct {
+	ProjectName   string // required
+	PlatformIndex int    // 1-based index among feishu/lark platforms in the project; 0 = first
+	ChatType      string // "group" writes allow_group_chats; everything else writes allow_private_chats
+	ChatID        string // required
+}
+
+// FeishuChatBindingUpdateResult describes the persisted chat binding.
+type FeishuChatBindingUpdateResult struct {
+	ProjectName      string
+	ProjectIndex     int
+	PlatformAbsIndex int
+	Key              string
+	Value            string
+	Added            bool
+}
+
 const defaultFeishuSetupConfigHeader = `language = "zh"
 idle_timeout_mins = 30
 attachment_send = "on"
@@ -1751,6 +1770,128 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 	}, nil
 }
 
+// AddFeishuChatBinding appends chat_id to allow_group_chats or
+// allow_private_chats for a project's Feishu/Lark platform and persists the
+// config atomically.
+func AddFeishuChatBinding(opts FeishuChatBindingUpdateOptions) (*FeishuChatBindingUpdateResult, error) {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	if ConfigPath == "" {
+		return nil, fmt.Errorf("config path not set")
+	}
+	projectName := strings.TrimSpace(opts.ProjectName)
+	if projectName == "" {
+		return nil, fmt.Errorf("project name is required")
+	}
+	chatID := strings.TrimSpace(opts.ChatID)
+	if chatID == "" {
+		return nil, fmt.Errorf("chat id is required")
+	}
+	if opts.PlatformIndex < 0 {
+		return nil, fmt.Errorf("platform index must be >= 0")
+	}
+
+	data, err := os.ReadFile(ConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	raw := string(data)
+	cfg := &Config{}
+	if err := toml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	projectIdx := -1
+	for i := range cfg.Projects {
+		if cfg.Projects[i].Name == projectName {
+			projectIdx = i
+			break
+		}
+	}
+	if projectIdx < 0 {
+		return nil, fmt.Errorf("project %q not found", projectName)
+	}
+
+	proj := &cfg.Projects[projectIdx]
+	candidates := make([]int, 0, len(proj.Platforms))
+	for i := range proj.Platforms {
+		t := strings.ToLower(strings.TrimSpace(proj.Platforms[i].Type))
+		if t == "feishu" || t == "lark" {
+			candidates = append(candidates, i)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("project %q has no feishu/lark platform", projectName)
+	}
+
+	targetPos := 0
+	if opts.PlatformIndex > 0 {
+		targetPos = opts.PlatformIndex - 1
+	}
+	if targetPos < 0 || targetPos >= len(candidates) {
+		return nil, fmt.Errorf(
+			"platform index %d out of range: project %q has %d feishu/lark platform(s)",
+			opts.PlatformIndex, projectName, len(candidates),
+		)
+	}
+
+	absIdx := candidates[targetPos]
+	platform := &proj.Platforms[absIdx]
+	if platform.Options == nil {
+		platform.Options = map[string]any{}
+	}
+
+	key := "allow_private_chats"
+	if strings.EqualFold(strings.TrimSpace(opts.ChatType), "group") {
+		key = "allow_group_chats"
+	}
+	current := strings.TrimSpace(stringOption(platform.Options[key]))
+	next, added := mergeCommaSeparatedValue(current, chatID)
+	platform.Options[key] = next
+
+	lines, hadTrailing := splitConfigLines(raw)
+	spans := buildRawProjectSpans(lines)
+	if projectIdx >= len(spans) {
+		return nil, fmt.Errorf("project %q located in parsed config but not raw file", projectName)
+	}
+	if absIdx >= len(spans[projectIdx].platforms) {
+		return nil, fmt.Errorf("feishu/lark platform located in parsed config but not raw file")
+	}
+
+	reloadSpan := func() rawPlatformSpan {
+		spans = buildRawProjectSpans(lines)
+		return spans[projectIdx].platforms[absIdx]
+	}
+	span := spans[projectIdx].platforms[absIdx]
+	if span.optionsStart < 0 {
+		insertAt := span.end + 1
+		block := make([]string, 0, 4)
+		if insertAt > 0 && strings.TrimSpace(lines[insertAt-1]) != "" {
+			block = append(block, "")
+		}
+		block = append(block, "[projects.platforms.options]")
+		if insertAt < len(lines) && strings.TrimSpace(lines[insertAt]) != "" {
+			block = append(block, "")
+		}
+		lines = insertLines(lines, insertAt, block)
+		span = reloadSpan()
+	}
+	lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, key, next)
+	if err := writeRawConfig(joinConfigLines(lines, hadTrailing)); err != nil {
+		return nil, err
+	}
+
+	return &FeishuChatBindingUpdateResult{
+		ProjectName:      projectName,
+		ProjectIndex:     projectIdx,
+		PlatformAbsIndex: absIdx,
+		Key:              key,
+		Value:            next,
+		Added:            added,
+	}, nil
+}
+
 func stringOption(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -1762,6 +1903,7 @@ func appendDefaultFeishuPlatformOptionLines(lines []string) []string {
 	return append(lines,
 		`allow_private_chats = ""`,
 		`allow_group_chats = ""`,
+		"auto_bind_chats = true",
 		"group_reply_all = false",
 		"share_session_in_channel = true",
 		"thread_isolation = false",
@@ -1776,14 +1918,19 @@ func appendDefaultFeishuPlatformOptionLines(lines []string) []string {
 }
 
 func mergeAllowFromValue(current, userID string) string {
-	current = strings.TrimSpace(current)
-	userID = strings.TrimSpace(userID)
+	value, _ := mergeCommaSeparatedValue(current, userID)
+	return value
+}
 
-	if current == "*" || userID == "" {
-		return current
+func mergeCommaSeparatedValue(current, item string) (string, bool) {
+	current = strings.TrimSpace(current)
+	item = strings.TrimSpace(item)
+
+	if current == "*" || item == "" {
+		return current, false
 	}
 	if current == "" {
-		return userID
+		return item, true
 	}
 
 	parts := strings.Split(current, ",")
@@ -1808,18 +1955,23 @@ func mergeAllowFromValue(current, userID string) string {
 
 	for _, part := range parts {
 		if len(merged) == 1 && merged[0] == "*" {
-			return "*"
+			return "*", false
 		}
 		appendPart(part)
 	}
 	if len(merged) == 1 && merged[0] == "*" {
-		return "*"
+		return "*", false
 	}
-	appendPart(userID)
+	for _, existing := range merged {
+		if strings.EqualFold(existing, item) {
+			return strings.Join(merged, ","), false
+		}
+	}
+	appendPart(item)
 	if len(merged) == 1 && merged[0] == "*" {
-		return "*"
+		return "*", false
 	}
-	return strings.Join(merged, ",")
+	return strings.Join(merged, ","), true
 }
 
 func upsertProjectStringKey(lines []string, projectIdx int, key, value string) []string {

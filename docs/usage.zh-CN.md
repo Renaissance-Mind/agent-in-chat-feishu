@@ -9,6 +9,7 @@
 ```bash
 agentchat feishu setup --project my-project
 agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
+agentchat feishu permissions --project my-project
 ```
 
 启动：
