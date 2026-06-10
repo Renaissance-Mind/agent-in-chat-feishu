@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +32,7 @@ const (
 	accountsLarkBaseURL   = "https://accounts.larksuite.com"
 	openFeishuBaseURL     = "https://open.feishu.cn"
 	openLarkBaseURL       = "https://open.larksuite.com"
+	defaultFeishuProject  = "feishu"
 )
 
 type registrationInitResponse struct {
@@ -114,7 +115,7 @@ func runFeishu(args []string) {
 func runFeishuSetup(args []string, requestedMode string) {
 	fs := flag.NewFlagSet("feishu "+requestedMode, flag.ExitOnError)
 	configFile := fs.String("config", "", "path to config file")
-	project := fs.String("project", "", "project name (optional if only one project)")
+	project := fs.String("project", "", "local bot profile name (default: feishu)")
 	platformIndex := fs.Int("platform-index", 0, "1-based index among feishu/lark platforms in the project (0 = first)")
 	platformType := fs.String("platform-type", "", "force platform type: feishu or lark")
 	app := fs.String("app", "", "existing bot credentials in app_id:app_secret format")
@@ -199,7 +200,7 @@ func runFeishuSetup(args []string, requestedMode string) {
 		botOpenID = fetchBotOpenIDForSetup(resolvedAppID, resolvedAppSecret, provisionType)
 		ownerOpenIDForConfig = setupOwnerOpenIDForConfig(ownerOpenID, botOpenID)
 	}
-	workDir, _ := os.Getwd()
+	workDir := defaultFeishuSetupWorkDir(*project)
 	provisionResult, err := config.EnsureProjectWithFeishuPlatform(config.EnsureProjectWithFeishuOptions{
 		ProjectName:  targetProject,
 		PlatformType: provisionType,
@@ -372,7 +373,7 @@ func printBotMenuGuidance(platformType string) {
 func runFeishuPermissions(args []string) {
 	fs := flag.NewFlagSet("feishu permissions", flag.ExitOnError)
 	configFile := fs.String("config", "", "path to config file")
-	project := fs.String("project", "", "project name (optional if only one project)")
+	project := fs.String("project", "", "local bot profile name (default: feishu)")
 	platformIndex := fs.Int("platform-index", 0, "1-based index among feishu/lark platforms in the project (0 = first)")
 	platformType := fs.String("platform-type", "", "force platform type: feishu or lark")
 	appID := fs.String("app-id", "", "app_id override; if omitted, read from config")
@@ -491,7 +492,7 @@ Commands:
 
 Options:
   --config <path>             Path to config file
-  --project <name>            Target project (auto-created if missing)
+  --project <name>            Local bot profile name (default: feishu; auto-created if missing)
   --platform-index <n>        1-based Feishu/Lark platform index in the project (default: first)
   --platform-type <type>      Force platform type: feishu or lark
   --app <id:secret>           Existing credentials (recommended for bind/setup)
@@ -504,17 +505,18 @@ Options:
 
 Examples:
   # Recommended: one command for both flows
+  agentchat feishu setup
+  agentchat feishu setup --app cli_xxx:sec_xxx
   agentchat feishu setup --project my-project
-  agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 
   # Equivalent to "setup --app ..."
-  agentchat feishu bind --project my-project --app cli_xxx:sec_xxx
+  agentchat feishu bind --app cli_xxx:sec_xxx
 
   # Print direct permission/event links for an existing app
-  agentchat feishu permissions --project my-project
+  agentchat feishu permissions
 
   # Use only when you must force QR onboarding
-  agentchat feishu new --project my-project --platform-type lark`)
+  agentchat feishu new --platform-type lark`)
 }
 
 func resolveFeishuSetupInputs(mode, app, appID, appSecret string) (effectiveMode, resolvedAppID, resolvedAppSecret string, err error) {
@@ -575,19 +577,19 @@ func resolveTargetProject(project string) (string, error) {
 	if project != "" {
 		return project, nil
 	}
-	projects, err := config.ListProjects()
-	if err != nil {
-		return "", err
+	return defaultFeishuProject, nil
+}
+
+func defaultFeishuSetupWorkDir(project string) string {
+	if strings.TrimSpace(project) != "" {
+		workDir, _ := os.Getwd()
+		return workDir
 	}
-	switch len(projects) {
-	case 0:
-		return "", fmt.Errorf("no project found in config")
-	case 1:
-		return projects[0], nil
-	default:
-		sort.Strings(projects)
-		return "", fmt.Errorf("multiple projects found, please specify --project (%s)", strings.Join(projects, ", "))
+	dir := filepath.Dir(config.ConfigPath)
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
 	}
+	return filepath.Join(dir, defaultFeishuProject)
 }
 
 func normalizeFeishuPlatformType(raw string) (string, error) {

@@ -1,7 +1,7 @@
 # agent-in-chat-feishu configuration
 #
-# `agentchat feishu setup --project <name>` is the recommended way to create
-# this file. Strings support ${ENV_VAR} substitution.
+# `agentchat feishu setup` is the recommended way to create this file.
+# Strings support ${ENV_VAR} substitution.
 
 language = "zh"
 # data_dir = "~/.agentchat" # default runtime/session/cache directory

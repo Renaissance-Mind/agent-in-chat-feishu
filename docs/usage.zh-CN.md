@@ -7,10 +7,12 @@
 ## 飞书配置
 
 ```bash
-agentchat feishu setup --project my-project
-agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
-agentchat feishu permissions --project my-project
+agentchat feishu setup
+agentchat feishu setup --app cli_xxx:sec_xxx
+agentchat feishu permissions
 ```
+
+不传 `--project` 时，默认使用本地机器人配置 `feishu`，初始工作目录为 `~/.agentchat/feishu/`。后续可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。
 
 启动：
 

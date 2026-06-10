@@ -1563,7 +1563,15 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 		proj.Agent.Options = map[string]any{}
 	}
 	workDir := strings.TrimSpace(opts.WorkDir)
+	if workDir == "" {
+		if existingWorkDir, _ := proj.Agent.Options["work_dir"].(string); strings.TrimSpace(existingWorkDir) == "" {
+			workDir = defaultProjectWorkDir(projectName)
+		}
+	}
 	if workDir != "" {
+		if err := os.MkdirAll(workDir, 0o755); err != nil {
+			return nil, fmt.Errorf("create project work_dir: %w", err)
+		}
 		proj.Agent.Options["work_dir"] = workDir
 	}
 
@@ -1612,6 +1620,33 @@ func EnsureProjectWithFeishuPlatform(opts EnsureProjectWithFeishuOptions) (*Ensu
 		PlatformAbsIndex: 0,
 		PlatformType:     platformType,
 	}, nil
+}
+
+func defaultProjectWorkDir(projectName string) string {
+	dir := filepath.Dir(ConfigPath)
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	name := safeProjectDirName(projectName)
+	if name == "" {
+		name = "project"
+	}
+	return filepath.Join(dir, name)
+}
+
+func safeProjectDirName(projectName string) string {
+	replacer := strings.NewReplacer(
+		"\\", "_",
+		"/", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	)
+	return replacer.Replace(strings.TrimSpace(projectName))
 }
 
 // SaveFeishuPlatformCredentials updates app_id/app_secret for a project's

@@ -69,16 +69,16 @@ model = "gpt-5.5"
 Recommended:
 
 ```bash
-agentchat feishu setup --project my-project
+agentchat feishu setup
 ```
 
 Connect an existing Feishu/Lark app:
 
 ```bash
-agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
+agentchat feishu setup --app cli_xxx:sec_xxx
 ```
 
-The `setup` command is the default path. It creates the project/platform config if needed, writes credentials into `config.toml`, and prints direct permission/event links for the app.
+The `setup` command is the default path. Without `--project`, it creates a local bot profile named `feishu` and sets its initial work directory to `~/.agentchat/feishu/` next to the config file. That directory is only the starting workspace; users can switch to the real code repository later from chat with `/dir` or `/workspace`. The command creates the project/platform config if needed, writes credentials into `config.toml`, and prints direct permission/event links for the app.
 
 For QR onboarding, Feishu usually provisions the bot app and core capabilities during the registration flow. For an existing app, run `setup --app ...`, open the printed scope-apply link to confirm the preselected scopes, verify long-connection event delivery, and publish a new version if Feishu asks for one.
 
@@ -87,7 +87,7 @@ New Feishu projects default to chat binding, not allow-all. If `admin_from` is s
 Reprint the direct permission/event links later:
 
 ```bash
-agentchat feishu permissions --project my-project
+agentchat feishu permissions
 ```
 
 ## 4. Verify Feishu Capabilities

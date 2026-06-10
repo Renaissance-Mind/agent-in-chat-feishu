@@ -9,13 +9,13 @@
 默认用 `setup`：
 
 ```bash
-agentchat feishu setup --project my-project
+agentchat feishu setup
 ```
 
 关联已有应用：
 
 ```bash
-agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
+agentchat feishu setup --app cli_xxx:sec_xxx
 ```
 
 启动：
@@ -24,7 +24,7 @@ agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 agentchat
 ```
 
-`setup` 会自动准备项目配置。如果 `--project` 不存在，会创建项目；如果项目里没有 Feishu/Lark 平台，会自动补一个。命令完成时还会打印权限申请、权限后台和事件订阅直达链接。
+`setup` 会自动准备本地机器人配置。不传 `--project` 时，会创建名为 `feishu` 的本地配置，并把初始工作目录设为配置同级的 `~/.agentchat/feishu/`；这个目录只是默认落点，之后可以在聊天里用 `/dir` 或 `/workspace` 切到真正要操作的代码仓库。如果指定的 `--project` 不存在，会创建项目；如果项目里没有 Feishu/Lark 平台，会自动补一个。命令完成时还会打印权限申请、权限后台和事件订阅直达链接。
 
 新项目默认使用聊天绑定，而不是 allow-all。如果已设置 `admin_from`，管理员把机器人拉进群或发起私聊后，第一次有效触发会自动绑定该会话并持久化 `chat_id`；如果不是管理员触发，机器人会返回需要加入 `allow_group_chats` 或 `allow_private_chats` 的 `chat_id`。
 
@@ -33,7 +33,7 @@ agentchat
 ### 方式一：扫码新建
 
 ```bash
-agentchat feishu setup --project my-project
+agentchat feishu setup
 ```
 
 终端会打印二维码和 URL。用飞书/Lark 手机 App 扫码后，注册流程通常会创建机器人应用，并预配核心能力。命令结束时会打印 `scope-apply` 权限申请链接，链接里已经预选推荐 scopes。
@@ -49,7 +49,7 @@ agentchat feishu setup --project my-project
 ### 方式二：关联已有应用
 
 ```bash
-agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
+agentchat feishu setup --app cli_xxx:sec_xxx
 ```
 
 这会校验 `app_id/app_secret`，然后写入 `config.toml`。它不会直接修改已有应用的权限申请，但会打印带预选 scope 的权限申请链接，以及对应的权限后台和事件订阅页面。
@@ -57,7 +57,7 @@ agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
 之后可随时重新打印这些链接：
 
 ```bash
-agentchat feishu permissions --project my-project
+agentchat feishu permissions
 ```
 
 开放平台入口：

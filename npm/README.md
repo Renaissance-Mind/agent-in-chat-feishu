@@ -17,9 +17,11 @@ agentchat
 ## Quick Start
 
 ```bash
-agentchat feishu setup --project my-project
+agentchat feishu setup
 agentchat
 ```
+
+Without `--project`, setup creates the local bot profile `feishu` with initial work directory `~/.agentchat/feishu/`.
 
 ## Documentation
 

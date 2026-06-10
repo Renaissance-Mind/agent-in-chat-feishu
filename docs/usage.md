@@ -7,10 +7,12 @@ This guide covers the retained cc-connect runtime features in `agent-in-chat-fei
 ## Feishu Setup
 
 ```bash
-agentchat feishu setup --project my-project
-agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
-agentchat feishu permissions --project my-project
+agentchat feishu setup
+agentchat feishu setup --app cli_xxx:sec_xxx
+agentchat feishu permissions
 ```
+
+Without `--project`, setup uses the local bot profile `feishu` and initial work directory `~/.agentchat/feishu/`. You can switch to the real code repository later from chat with `/dir` or `/workspace`.
 
 Then start:
 

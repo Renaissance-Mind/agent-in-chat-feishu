@@ -77,6 +77,21 @@ func TestSetupOwnerOpenIDForConfigKeepsUserOpenID(t *testing.T) {
 	}
 }
 
+func TestResolveTargetProjectDefaultsToFeishu(t *testing.T) {
+	dir := t.TempDir()
+	prev := config.ConfigPath
+	config.ConfigPath = filepath.Join(dir, "config.toml")
+	t.Cleanup(func() { config.ConfigPath = prev })
+
+	got, err := resolveTargetProject("")
+	if err != nil {
+		t.Fatalf("resolveTargetProject returned error: %v", err)
+	}
+	if got != "feishu" {
+		t.Fatalf("resolveTargetProject = %q, want feishu", got)
+	}
+}
+
 func TestResolveFeishuPermissionTargetReadsConfig(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")

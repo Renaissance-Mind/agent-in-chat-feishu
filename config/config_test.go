@@ -1358,6 +1358,42 @@ func TestEnsureProjectWithFeishuPlatform_CreatesConfigFileWhenMissing(t *testing
 	}
 }
 
+func TestEnsureProjectWithFeishuPlatform_DefaultsWorkDirNextToConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	patchConfigPath(t, configPath)
+
+	result, err := EnsureProjectWithFeishuPlatform(EnsureProjectWithFeishuOptions{
+		ProjectName:  "feishu",
+		PlatformType: "feishu",
+	})
+	if err != nil {
+		t.Fatalf("EnsureProjectWithFeishuPlatform returned error: %v", err)
+	}
+	if !result.Created {
+		t.Fatal("result.Created = false, want true")
+	}
+
+	wantWorkDir := filepath.Join(dir, "feishu")
+	if info, err := os.Stat(wantWorkDir); err != nil {
+		t.Fatalf("default work_dir was not created: %v", err)
+	} else if !info.IsDir() {
+		t.Fatalf("default work_dir path is not a directory: %s", wantWorkDir)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	if len(cfg.Projects) != 1 {
+		t.Fatalf("len(cfg.Projects) = %d, want 1", len(cfg.Projects))
+	}
+	proj := cfg.Projects[0]
+	if proj.Name != "feishu" {
+		t.Fatalf("proj.Name = %q, want feishu", proj.Name)
+	}
+	if got := stringMapValue(proj.Agent.Options, "work_dir"); got != wantWorkDir {
+		t.Fatalf("work_dir = %q, want %q", got, wantWorkDir)
+	}
+}
+
 func TestEnsureProjectWithFeishuPlatform_AddsPlatformWhenProjectExistsWithoutFeishu(t *testing.T) {
 	configPath := writeConfigFixture(t, projectWithoutFeishuFixture)
 	patchConfigPath(t, configPath)

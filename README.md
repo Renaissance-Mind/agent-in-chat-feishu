@@ -74,13 +74,13 @@ make build
 Create or connect a Feishu/Lark bot and write the project config:
 
 ```bash
-agentchat feishu setup --project my-project
+agentchat feishu setup
 ```
 
 Connect an existing app:
 
 ```bash
-agentchat feishu setup --project my-project --app cli_xxx:sec_xxx
+agentchat feishu setup --app cli_xxx:sec_xxx
 ```
 
 Then run the bridge:
@@ -89,7 +89,7 @@ Then run the bridge:
 agentchat
 ```
 
-`setup` is the default path. It writes the project/platform config and prints direct permission/event links for the app. QR onboarding usually creates the bot app with core capabilities; when binding an existing app, open the printed scope-apply link, confirm the preselected scopes, verify long-connection events, then publish a new app version if Feishu asks for one. You can reprint the links later with `agentchat feishu permissions --project my-project`.
+`setup` is the default path. Without `--project`, it creates the local bot profile `feishu` and sets its initial work directory to `~/.agentchat/feishu/` next to the config file. That directory is only the starting workspace; you can switch to the real code repository later from chat with `/dir` or `/workspace`. The command writes the platform config and prints direct permission/event links for the app. QR onboarding usually creates the bot app with core capabilities; when binding an existing app, open the printed scope-apply link, confirm the preselected scopes, verify long-connection events, then publish a new app version if Feishu asks for one. You can reprint the links later with `agentchat feishu permissions`.
 
 New projects default to chat binding. If `admin_from` is set, the first valid trigger from an admin automatically binds that group or DM and persists its `chat_id`; without an admin match, the bot replies with the `chat_id` to add to `allow_group_chats` or `allow_private_chats`.
 
