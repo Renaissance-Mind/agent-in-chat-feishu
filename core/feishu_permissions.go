@@ -9,6 +9,17 @@ import (
 
 var feishuPermissionScopePattern = regexp.MustCompile(`\b[a-z][a-z0-9_]*(?::[a-z0-9_.-]+)+\b`)
 
+var feishuDeprecatedScopeAliases = map[string]string{
+	"im:chat:readonly":               "im:chat:read",
+	"im:message:update":              "im:message",
+	"im:message:recall":              "im:message",
+	"im:message:send":                "im:message",
+	"im:message.history:readonly":    "im:message",
+	"im:message.revert_msg:readonly": "im:message",
+	"im:message:basic":               "im:message:readonly",
+	"im:resource:upload":             "im:resource",
+}
+
 // FeishuRecommendedBotScopes returns the app scopes used by the Feishu/Lark
 // runtime for normal chat operation, group context, progress cards, reactions,
 // attachments, and readable identity mapping.
@@ -17,13 +28,14 @@ func FeishuRecommendedBotScopes() []string {
 		"im:message",
 		"im:message:readonly",
 		"im:message:send_as_bot",
-		"im:message:update",
-		"im:message:recall",
+		"im:message.group_at_msg:readonly",
 		"im:message.group_msg",
+		"im:message.p2p_msg:readonly",
 		"im:message.reactions:write_only",
 		"im:resource",
-		"im:resource:upload",
-		"im:chat:readonly",
+		"im:chat.access_event.bot_p2p_chat:read",
+		"im:chat:read",
+		"im:chat.members:bot_access",
 		"im:chat.members:read",
 		"contact:user.base:readonly",
 	}
@@ -33,6 +45,8 @@ func FeishuRecommendedBotScopes() []string {
 func FeishuRecommendedBotEvents() []string {
 	return []string{
 		"im.message.receive_v1",
+		"im.message.message_read_v1",
+		"im.chat.access_event.bot_p2p_chat_entered_v1",
 		"card.action.trigger",
 		"application.bot.menu_v6",
 	}
@@ -56,6 +70,22 @@ func FeishuScopeApplyURL(platformType, appID string, scopes []string) string {
 	}
 	scopeParam := strings.ReplaceAll(url.QueryEscape(strings.Join(scopes, " ")), "+", "%20")
 	return FeishuOpenPlatformBase(platformType) + "/page/scope-apply?clientID=" + url.QueryEscape(appID) + "&scopes=" + scopeParam
+}
+
+func FeishuPermissionAuthURL(platformType, appID string, scopes []string) string {
+	appID = strings.TrimSpace(appID)
+	if appID == "" {
+		return ""
+	}
+	scopes = normalizeFeishuScopes(scopes)
+	if len(scopes) == 0 {
+		scopes = FeishuRecommendedBotScopes()
+	}
+	query := url.Values{}
+	query.Set("q", strings.Join(scopes, ","))
+	query.Set("op_from", "openapi")
+	query.Set("token_type", "tenant")
+	return FeishuOpenPlatformBase(platformType) + "/app/" + url.PathEscape(appID) + "/auth?" + query.Encode()
 }
 
 func FeishuDeveloperConsoleURL(platformType, appID string) string {
@@ -114,6 +144,9 @@ func normalizeFeishuScopes(scopes []string) []string {
 		scope = strings.Trim(strings.TrimSpace(scope), ".,;，；。")
 		if scope == "" {
 			continue
+		}
+		if replacement, ok := feishuDeprecatedScopeAliases[scope]; ok {
+			scope = replacement
 		}
 		if !strings.Contains(scope, ":") {
 			continue

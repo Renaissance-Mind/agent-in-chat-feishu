@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,20 +135,67 @@ app_secret = "sec_lark"
 	config.ConfigPath = configPath
 	t.Cleanup(func() { config.ConfigPath = prev })
 
-	appID, platformType, err := resolveFeishuPermissionTarget("demo", "lark", 0)
+	target, err := resolveFeishuPermissionTarget("demo", "lark", 0)
 	if err != nil {
 		t.Fatalf("resolveFeishuPermissionTarget returned error: %v", err)
 	}
-	if appID != "cli_lark" || platformType != "lark" {
-		t.Fatalf("target = (%q, %q), want (cli_lark, lark)", appID, platformType)
+	if target.appID != "cli_lark" || target.appSecret != "sec_lark" || target.platformType != "lark" {
+		t.Fatalf("target = (%q, %q, %q), want (cli_lark, sec_lark, lark)", target.appID, target.appSecret, target.platformType)
 	}
 
-	appID, platformType, err = resolveFeishuPermissionTarget("demo", "", 2)
+	target, err = resolveFeishuPermissionTarget("demo", "", 2)
 	if err != nil {
 		t.Fatalf("resolveFeishuPermissionTarget with index returned error: %v", err)
 	}
-	if appID != "cli_lark" || platformType != "lark" {
-		t.Fatalf("indexed target = (%q, %q), want (cli_lark, lark)", appID, platformType)
+	if target.appID != "cli_lark" || target.appSecret != "sec_lark" || target.platformType != "lark" {
+		t.Fatalf("indexed target = (%q, %q, %q), want (cli_lark, sec_lark, lark)", target.appID, target.appSecret, target.platformType)
+	}
+}
+
+func TestApplyFeishuPermissionRequest(t *testing.T) {
+	var sawToken bool
+	var sawApply bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			sawToken = true
+			if r.Method != http.MethodPost {
+				t.Fatalf("token method = %s, want POST", r.Method)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode token body: %v", err)
+			}
+			if body["app_id"] != "cli_ok" || body["app_secret"] != "sec_ok" {
+				t.Fatalf("token body = %#v, want app credentials", body)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success","tenant_access_token":"tenant-token"}`))
+
+		case "/open-apis/application/v6/scopes/apply":
+			sawApply = true
+			if r.Method != http.MethodPost {
+				t.Fatalf("apply method = %s, want POST", r.Method)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer tenant-token" {
+				t.Fatalf("authorization = %q, want bearer token", got)
+			}
+			_, _ = w.Write([]byte(`{"code":0,"msg":"success","data":{}}`))
+
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	result, err := applyFeishuPermissionRequest(context.Background(), srv.URL, "cli_ok", "sec_ok", srv.Client())
+	if err != nil {
+		t.Fatalf("applyFeishuPermissionRequest returned error: %v", err)
+	}
+	if result.Code != 0 || !result.Success {
+		t.Fatalf("result = %+v, want success", result)
+	}
+	if !sawToken || !sawApply {
+		t.Fatalf("sawToken=%v sawApply=%v, want both requests", sawToken, sawApply)
 	}
 }
 

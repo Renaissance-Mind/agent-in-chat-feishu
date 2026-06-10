@@ -89,7 +89,7 @@ agentchat feishu setup --app cli_xxx:sec_xxx
 agentchat
 ```
 
-默认使用 `setup`。不传 `--project` 时，它会创建本地机器人配置 `feishu`，并把默认工作目录设为配置同级的 `~/.agentchat/feishu/`；这个目录只是初始工作区，之后可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。命令会写入平台配置，并打印该应用的权限和事件直达链接。扫码新建通常会创建机器人应用并预配核心能力；关联已有应用时，打开终端打印的权限申请链接，确认已预选的 scopes，再核验长连接事件订阅。如果飞书提示需要发布新版本，补权限或事件后要创建版本并发布。之后也可以用 `agentchat feishu permissions` 重新打印这些链接。
+默认使用 `setup`。不传 `--project` 时，它会创建本地机器人配置 `feishu`，并把默认工作目录设为配置同级的 `~/.agentchat/feishu/`；这个目录只是初始工作区，之后可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。命令会写入平台配置，并打印该应用的权限和事件直达链接。扫码新建通常会创建机器人应用并预配核心能力；关联已有应用时，打开终端打印的权限开通直达链接，再核验长连接事件订阅。如果飞书提示需要发布新版本，补权限或事件后要创建版本并发布。之后也可以用 `agentchat feishu permissions` 重新打印这些链接，或用 `agentchat feishu permissions --apply` 通过官方接口向租户管理员发起权限申请。
 
 新项目默认使用聊天绑定。如果已设置 `admin_from`，管理员第一次在群聊或私聊中有效触发机器人时会自动绑定该会话并持久化 `chat_id`；如果不是管理员触发，机器人会返回需要加入 `allow_group_chats` 或 `allow_private_chats` 的 `chat_id`。
 
@@ -162,20 +162,21 @@ reaction_emoji = "OnIt"
 
 | 能力 | 飞书权限或事件 |
 |---|---|
-| 接收群里 @ 机器人消息 | `im.message.receive_v1` 和群 @ 消息权限 |
-| 接收单聊消息 | `im.message.receive_v1` 和单聊消息权限 |
 | 拉取最近群历史和引用消息 | `im:message`、`im:message:readonly`、`im:message.group_msg` |
+| 接收群聊 @ 消息 | `im.message.receive_v1` 和 `im:message.group_at_msg:readonly` |
+| 接收私聊消息 | `im.message.receive_v1` 和 `im:message.p2p_msg:readonly` |
+| 识别用户进入私聊 | `im.chat.access_event.bot_p2p_chat_entered_v1` 和 `im:chat.access_event.bot_p2p_chat:read` |
 | 发送和回复消息 | `im:message` 或 `im:message:send_as_bot` |
-| 更新进度/状态卡片 | `im:message:update` |
-| 撤回临时预览消息 | `im:message:recall` |
+| 更新进度/状态卡片 | `im:message` |
+| 撤回临时预览消息 | `im:message` |
 | 自动添加/移除表情 | `im:message.reactions:write_only` |
-| 上传/下载图片和文件附件 | `im:resource` 和 `im:resource:upload` |
+| 上传/下载图片和文件附件 | `im:resource` |
 | 解析群成员名称 | `im:chat.members:read` 或更宽的群信息权限 |
 | 解析用户名称 | `contact:user.base:readonly` |
 | 使用交互卡片 | 卡片回调事件 `card.action.trigger` |
 | 使用机器人自定义菜单回调 | 机器人菜单事件 `application.bot.menu_v6` |
 
-`setup` 会打印飞书/Lark 的 `scope-apply` 链接，并预选运行时推荐 scopes：`im:message`、`im:message:readonly`、`im:message:send_as_bot`、`im:message:update`、`im:message:recall`、`im:message.group_msg`、`im:message.reactions:write_only`、`im:resource`、`im:resource:upload`、`im:chat:readonly`、`im:chat.members:read` 和 `contact:user.base:readonly`。
+`setup` 会打印飞书/Lark 的权限开通直达链接，并预选运行时推荐 scopes：`im:message`、`im:message:readonly`、`im:message:send_as_bot`、`im:message.group_at_msg:readonly`、`im:message.group_msg`、`im:message.p2p_msg:readonly`、`im:message.reactions:write_only`、`im:resource`、`im:chat.access_event.bot_p2p_chat:read`、`im:chat:read`、`im:chat.members:bot_access`、`im:chat.members:read` 和 `contact:user.base:readonly`。如果配置里有 `app_secret`，`agentchat feishu permissions --apply` 可以通过飞书官方 `application/v6/scopes/apply` 接口向租户管理员发起权限申请。
 
 官方参考：[发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[回复消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply)、[接收消息事件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive)、[会话历史](https://open.feishu.cn/document/server-docs/im-v1/message/list)、[表情回复](https://open.feishu.cn/document/server-docs/im-v1/message-reaction/create?lang=zh-CN)、[群成员列表](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/chat-members/get)、[上传图片](https://open.feishu.cn/document/server-docs/im-v1/image/create)。
 

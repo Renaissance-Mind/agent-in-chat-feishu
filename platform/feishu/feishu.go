@@ -2798,7 +2798,7 @@ func (p *Platform) logPermissionHint(ctx context.Context, operation string, err 
 	slog.WarnContext(ctx, p.tag()+": missing Feishu app permission",
 		"operation", operation,
 		"scopes", strings.Join(scopes, ","),
-		"scope_apply_url", core.FeishuScopeApplyURL(p.platformName, p.appID, scopes),
+		"permission_auth_url", core.FeishuPermissionAuthURL(p.platformName, p.appID, scopes),
 		"permission_console_url", core.FeishuPermissionConsoleURL(p.platformName, p.appID),
 	)
 }

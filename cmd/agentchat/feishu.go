@@ -69,6 +69,25 @@ type tenantTokenResponse struct {
 	TenantAccessToken string `json:"tenant_access_token"`
 }
 
+type scopeApplyResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}
+
+type feishuPermissionTarget struct {
+	appID        string
+	appSecret    string
+	platformType string
+}
+
+type feishuPermissionApplyResult struct {
+	Code      int
+	Msg       string
+	Success   bool
+	Noop      bool
+	Duplicate bool
+}
+
 type registrationClient struct {
 	baseURL string
 	http    *http.Client
@@ -377,6 +396,8 @@ func runFeishuPermissions(args []string) {
 	platformIndex := fs.Int("platform-index", 0, "1-based index among feishu/lark platforms in the project (0 = first)")
 	platformType := fs.String("platform-type", "", "force platform type: feishu or lark")
 	appID := fs.String("app-id", "", "app_id override; if omitted, read from config")
+	appSecret := fs.String("app-secret", "", "app_secret override; required for --apply when not in config")
+	apply := fs.Bool("apply", false, "request tenant admin approval through Feishu application/v6/scopes/apply")
 	_ = fs.Parse(args)
 
 	initConfigPath(*configFile)
@@ -387,36 +408,61 @@ func runFeishuPermissions(args []string) {
 		os.Exit(1)
 	}
 
-	resolvedAppID := strings.TrimSpace(*appID)
-	resolvedPlatformType := normalizedType
-	if resolvedAppID == "" {
-		resolvedAppID, resolvedPlatformType, err = resolveFeishuPermissionTarget(*project, normalizedType, *platformIndex)
+	target := feishuPermissionTarget{
+		appID:        strings.TrimSpace(*appID),
+		appSecret:    strings.TrimSpace(*appSecret),
+		platformType: normalizedType,
+	}
+	if target.appID == "" {
+		target, err = resolveFeishuPermissionTarget(*project, normalizedType, *platformIndex)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	}
-	if resolvedPlatformType == "" {
-		resolvedPlatformType = "feishu"
+	if target.platformType == "" {
+		target.platformType = "feishu"
 	}
-	if resolvedAppID == "" {
+	if target.appID == "" {
 		fmt.Fprintln(os.Stderr, "Error: app_id is empty; pass --app-id or configure a Feishu/Lark platform first")
 		os.Exit(1)
 	}
-	printFeishuPermissionGuidance(resolvedPlatformType, resolvedAppID)
+	printFeishuPermissionGuidance(target.platformType, target.appID)
+	if *apply {
+		if target.appSecret == "" {
+			fmt.Fprintln(os.Stderr, "Error: app_secret is required for --apply; pass --app-secret or read it from a configured platform")
+			os.Exit(1)
+		}
+		result, err := applyFeishuPermissionRequest(context.Background(), core.FeishuOpenPlatformBase(target.platformType), target.appID, target.appSecret, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: apply permission request failed: %v\n", err)
+			os.Exit(1)
+		}
+		switch {
+		case result.Success:
+			fmt.Println("✅ 已通过官方 OpenAPI 向租户管理员发起权限开通申请。")
+		case result.Noop:
+			fmt.Println("✅ 当前租户没有待申请的未授权权限。")
+		case result.Duplicate:
+			fmt.Println("✅ 已存在待处理的权限申请，无需重复提交。")
+		default:
+			fmt.Printf("权限申请返回: code=%d msg=%s\n", result.Code, result.Msg)
+		}
+		fmt.Println()
+	}
 }
 
-func resolveFeishuPermissionTarget(projectName, platformType string, platformIndex int) (appID, resolvedPlatformType string, err error) {
+func resolveFeishuPermissionTarget(projectName, platformType string, platformIndex int) (feishuPermissionTarget, error) {
 	if platformIndex < 0 {
-		return "", "", fmt.Errorf("platform index must be >= 0")
+		return feishuPermissionTarget{}, fmt.Errorf("platform index must be >= 0")
 	}
 	targetProject, err := resolveTargetProject(projectName)
 	if err != nil {
-		return "", "", err
+		return feishuPermissionTarget{}, err
 	}
 	cfg, err := config.Load(config.ConfigPath)
 	if err != nil {
-		return "", "", err
+		return feishuPermissionTarget{}, err
 	}
 	for _, project := range cfg.Projects {
 		if project.Name != targetProject {
@@ -435,25 +481,30 @@ func resolveFeishuPermissionTarget(projectName, platformType string, platformInd
 		}
 		if len(candidates) == 0 {
 			if platformType != "" {
-				return "", "", fmt.Errorf("project %q has no %s platform", targetProject, platformType)
+				return feishuPermissionTarget{}, fmt.Errorf("project %q has no %s platform", targetProject, platformType)
 			}
-			return "", "", fmt.Errorf("project %q has no feishu/lark platform", targetProject)
+			return feishuPermissionTarget{}, fmt.Errorf("project %q has no feishu/lark platform", targetProject)
 		}
 		targetPos := 0
 		if platformIndex > 0 {
 			targetPos = platformIndex - 1
 		}
 		if targetPos < 0 || targetPos >= len(candidates) {
-			return "", "", fmt.Errorf(
+			return feishuPermissionTarget{}, fmt.Errorf(
 				"platform index %d out of range: project %q has %d matching Feishu/Lark platform(s)",
 				platformIndex, targetProject, len(candidates),
 			)
 		}
 		platform := candidates[targetPos]
 		appID, _ := platform.Options["app_id"].(string)
-		return strings.TrimSpace(appID), strings.ToLower(strings.TrimSpace(platform.Type)), nil
+		appSecret, _ := platform.Options["app_secret"].(string)
+		return feishuPermissionTarget{
+			appID:        strings.TrimSpace(appID),
+			appSecret:    strings.TrimSpace(appSecret),
+			platformType: strings.ToLower(strings.TrimSpace(platform.Type)),
+		}, nil
 	}
-	return "", "", fmt.Errorf("project %q not found", targetProject)
+	return feishuPermissionTarget{}, fmt.Errorf("project %q not found", targetProject)
 }
 
 func printFeishuPermissionGuidance(platformType, appID string) {
@@ -465,7 +516,7 @@ func printFeishuPermissionGuidance(platformType, appID string) {
 	events := core.FeishuRecommendedBotEvents()
 
 	fmt.Println("🔐 权限与事件配置：")
-	fmt.Printf("   权限申请直达链接: %s\n", core.FeishuScopeApplyURL(platformType, appID, scopes))
+	fmt.Printf("   权限开通直达链接: %s\n", core.FeishuPermissionAuthURL(platformType, appID, scopes))
 	fmt.Printf("   权限后台: %s\n", core.FeishuPermissionConsoleURL(platformType, appID))
 	fmt.Printf("   事件订阅: %s\n", core.FeishuEventConsoleURL(platformType, appID))
 	fmt.Println("   需要的权限 scopes:")
@@ -478,6 +529,83 @@ func printFeishuPermissionGuidance(platformType, appID string) {
 	}
 	fmt.Println("   确认使用「长连接」接收事件；权限或事件变更后，创建新版本并发布。")
 	fmt.Println()
+}
+
+func applyFeishuPermissionRequest(ctx context.Context, baseURL, appID, appSecret string, client *http.Client) (*feishuPermissionApplyResult, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	appID = strings.TrimSpace(appID)
+	appSecret = strings.TrimSpace(appSecret)
+	if baseURL == "" {
+		return nil, fmt.Errorf("base URL is empty")
+	}
+	if appID == "" || appSecret == "" {
+		return nil, fmt.Errorf("app_id and app_secret are required")
+	}
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+
+	body, err := json.Marshal(map[string]string{
+		"app_id":     appID,
+		"app_secret": appSecret,
+	})
+	if err != nil {
+		return nil, err
+	}
+	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/open-apis/auth/v3/tenant_access_token/internal", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	tokenReq.Header.Set("Content-Type", "application/json")
+
+	tokenResp, err := client.Do(tokenReq)
+	if err != nil {
+		return nil, err
+	}
+	defer tokenResp.Body.Close()
+	tokenData, err := io.ReadAll(io.LimitReader(tokenResp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	var parsedToken tenantTokenResponse
+	if err := json.Unmarshal(tokenData, &parsedToken); err != nil {
+		return nil, fmt.Errorf("decode tenant token response: %w", err)
+	}
+	if parsedToken.Code != 0 || parsedToken.TenantAccessToken == "" {
+		return nil, fmt.Errorf("tenant token failed: code=%d msg=%s", parsedToken.Code, parsedToken.Msg)
+	}
+
+	applyReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/open-apis/application/v6/scopes/apply", nil)
+	if err != nil {
+		return nil, err
+	}
+	applyReq.Header.Set("Authorization", "Bearer "+parsedToken.TenantAccessToken)
+
+	applyResp, err := client.Do(applyReq)
+	if err != nil {
+		return nil, err
+	}
+	defer applyResp.Body.Close()
+	applyData, err := io.ReadAll(io.LimitReader(applyResp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	var parsedApply scopeApplyResponse
+	if err := json.Unmarshal(applyData, &parsedApply); err != nil {
+		return nil, fmt.Errorf("decode scope apply response: %w", err)
+	}
+
+	result := &feishuPermissionApplyResult{
+		Code:      parsedApply.Code,
+		Msg:       parsedApply.Msg,
+		Success:   parsedApply.Code == 0,
+		Noop:      parsedApply.Code == 212002,
+		Duplicate: parsedApply.Code == 212004,
+	}
+	if result.Success || result.Noop || result.Duplicate {
+		return result, nil
+	}
+	return result, fmt.Errorf("code=%d msg=%s", parsedApply.Code, parsedApply.Msg)
 }
 
 func printFeishuUsage() {
@@ -498,6 +626,7 @@ Options:
   --app <id:secret>           Existing credentials (recommended for bind/setup)
   --app-id <id>               Existing app_id
   --app-secret <secret>       Existing app_secret
+  --apply                     Request tenant permission approval via OpenAPI
   --timeout <seconds>         QR onboarding timeout (default: 600)
   --qr-image <path>           Save QR code as PNG image file (e.g. --qr-image qr.png)
   --set-allow-from-empty      Merge owner open_id into allow_from when available (default: false)
