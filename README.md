@@ -1,12 +1,10 @@
-# agent-in-chat-feishu
+<p align="center">
+  <img src="docs/images/agent-in-chat-feishu-banner.png" alt="Agent in Chat Feishu" width="720">
+</p>
 
 [English](README.md) | [中文](README.zh-CN.md)
 
 > ⚠️ **Personal-first defaults.** This project is designed primarily for personal or trusted small-team use. The default Codex agent mode is intentionally permissive so it can read local files, call local tools, and act like the agent you would run from your own terminal. For shared, production, or untrusted groups, review `mode`, `admin_from`, chat allowlists, and disabled commands before running it.
-
-<p align="center">
-  <img src="docs/images/banner.svg" alt="Agent in Chat Feishu" width="720">
-</p>
 
 Put Codex, Claude Code, and other coding agents into the Feishu chat loop your team already uses.
 
@@ -14,11 +12,18 @@ Put Codex, Claude Code, and other coding agents into the Feishu chat loop your t
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Platform](https://img.shields.io/badge/chat-Feishu%20%2F%20Lark-00BFA5)](docs/feishu.md)
 
+## 🌟 Highlights
+
+- 🚀 Foolproof out-of-the-box setup: install and create a bot with one command `npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu`
+- 🤖 Multiple bots can coexist: the bot can see messages from other bots
+- 🧠 Full context: non-@ messages also enter the context, and execution is triggered when the bot is @mentioned
+- 🍎 Currently tested mainly on MacOS + Codex
+
 `agent-in-chat-feishu` is a Feishu/Lark-only distribution derived from cc-connect. It keeps the mature agent runtime, sessions, slash commands, providers, progress cards, attachments, cron jobs, relay, management API, and multi-agent support, while removing the concrete adapters for other chat apps and the unused browser admin UI.
 
 The point is not to make your group chat feel like a bot room. The agent joins the ordinary conversation loop: people talk normally, mention the bot when work should happen, and Codex receives the missing group context before it starts.
 
-## Features
+## ✨ Features
 
 - 💬 **Feishu/Lark first** — bot setup, message receive, reply, cards, reactions, attachments, group history context.
 - 🧠 **Agent runtime preserved** — `/model`, `/stop`, `/new`, `/list`, `/switch`, `/history`, `/provider`, `/cron`, `/dir`, `/mode`, `/usage`, `/commands`, `/alias`, `/delete`, `/bind`, `/workspace`.
@@ -28,7 +33,7 @@ The point is not to make your group chat feel like a bot room. The agent joins t
 - 📌 **Less noise by default** — progress cards are ignored when building group context; readable final reply cards still count.
 - 🛠️ **Operational surface kept** — daemon mode, management API, webhook, cron/heartbeat, relay, session store, provider switching, and attachment send-back.
 
-## How It Feels
+## 💬 How It Feels
 
 Feishu group:
 
@@ -53,10 +58,10 @@ Alex: check the recent config and tell us what to fix.
 
 Progress cards from this or other bots are skipped. Sender names come from the local identity cache when available; new IDs trigger a Feishu lookup and then get persisted.
 
-## Installation
+## 📦 Installation
 
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu
+npm install -g @renaissancemind/agent-in-chat-feishu@latest
 agentchat --help
 ```
 
@@ -71,7 +76,7 @@ make build
 ./agentchat --help
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
 Create or connect a Feishu/Lark bot and write the project config:
 
@@ -107,7 +112,7 @@ agentchat daemon restart
 
 Automatic daemon setup captures the current `PATH`, matching cc-connect behavior. If you install from a non-interactive shell or use a custom path manager for the agent CLI, Node.js, or `lark-cli`, pass the service PATH explicitly with `agentchat setup feishu --daemon-env-path "$PATH"`.
 
-## Configuration
+## ⚙️ Configuration
 
 Minimal config shape:
 
@@ -159,7 +164,7 @@ The default config and runtime data directory is `~/.agentchat`. See [config.exa
 
 With `group_context_buffer = true`, Feishu group history is cached per chat. The first mention gives the agent recent background; later mentions in the same running session inject only newly delivered group messages, so previously sent context is not repeated in the Codex conversation.
 
-## Feishu Permissions
+## 🔐 Feishu Permissions
 
 For a full bot that behaves like the current runtime, enable robot capability, long-connection event delivery, and these permissions/events:
 
@@ -185,7 +190,7 @@ The setup command prints a Feishu/Lark `scope-apply` permission confirmation URL
 
 Official references: [one-click Feishu agent app](https://open.feishu.cn/document/mcp_open_tools/integrating-agents-with-feishu/overview), [scope list](https://open.feishu.cn/document/ukTMukTMukTM/uYTM5UjL2ETO14iNxkTN/scope-list), [send messages](https://open.feishu.cn/document/server-docs/im-v1/message/create), [reply](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply), [receive event](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive), [history](https://open.feishu.cn/document/server-docs/im-v1/message/list), [reactions](https://open.feishu.cn/document/server-docs/im-v1/message-reaction/create?lang=zh-CN), [group members](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/chat-members/get), [image upload](https://open.feishu.cn/document/server-docs/im-v1/image/create).
 
-## Commands
+## 🧭 Commands
 
 Examples you can send in Feishu:
 
@@ -209,7 +214,7 @@ agentchat send --session <session-id> --message "ship a short status update"
 agentchat daemon start
 ```
 
-## Documentation
+## 📚 Documentation
 
 - [Feishu setup guide](docs/feishu.md)
 - [Install guide](INSTALL.md)
@@ -217,14 +222,14 @@ agentchat daemon start
 - [Management API](docs/management-api.md)
 - [Bridge protocol](docs/bridge-protocol.md)
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome. Keep the distribution Feishu/Lark-only unless the project direction changes, and keep core agent/runtime behavior compatible with cc-connect where possible.
 
-## License
+## 📄 License
 
 [MIT](LICENSE)
 
-## Acknowledgements
+## 🙏 Acknowledgements
 
 This project is derived from and deeply indebted to [cc-connect](https://github.com/chenhg5/cc-connect). Thanks to the cc-connect authors and contributors for the original agent runtime, chat command model, and Feishu platform foundation.
