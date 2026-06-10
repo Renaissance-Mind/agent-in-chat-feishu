@@ -40,6 +40,7 @@ test("postinstall message points users to setup feishu", () => {
   const output = execFileSync(process.execPath, [path.join(npmDir, "postinstall.cjs")], {
     cwd: npmDir,
     encoding: "utf8",
+    env: { ...process.env, AGENTCHAT_POSTINSTALL_FORCE_STDOUT: "1" },
   });
   assert.match(output, /agentchat setup feishu/);
   assert.match(output, /Codex/);

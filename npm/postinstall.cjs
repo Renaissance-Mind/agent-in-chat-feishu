@@ -2,6 +2,8 @@
 
 "use strict";
 
+const fs = require("node:fs");
+
 const lines = [
   "",
   "+------------------------------------------------------------+",
@@ -22,4 +24,30 @@ const lines = [
   "",
 ];
 
-console.log(lines.join("\n"));
+const message = lines.join("\n");
+
+function writeDirectlyToTerminal(text) {
+  const terminalPath = process.platform === "win32" ? "\\\\.\\CONOUT$" : "/dev/tty";
+
+  try {
+    const fd = fs.openSync(terminalPath, "w");
+    try {
+      fs.writeSync(fd, text);
+    } finally {
+      fs.closeSync(fd);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+if (
+  process.env.AGENTCHAT_POSTINSTALL_FORCE_STDOUT !== "1" &&
+  !process.stdout.isTTY &&
+  writeDirectlyToTerminal(message)
+) {
+  process.exit(0);
+}
+
+process.stdout.write(message);
