@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveFeishuSetupInputs_AutoModeWithoutCredentialsUsesNew(t *testing.T) {
@@ -95,5 +100,47 @@ func TestSaveQRCodeImage_InvalidPath(t *testing.T) {
 	err := saveQRCodeImage("https://example.com", "/nonexistent/dir/qr.png")
 	if err == nil {
 		t.Fatal("expected error for invalid path, got nil")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestPollRegistrationUntilComplete_RetriesTransientPollError(t *testing.T) {
+	calls := 0
+	client := &registrationClient{
+		baseURL: "https://example.test",
+		http: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				return nil, context.DeadlineExceeded
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(`{
+					"client_id": "cli_ok",
+					"client_secret": "sec_ok",
+					"user_info": {
+						"open_id": "ou_user",
+						"tenant_brand": "feishu"
+					}
+				}`)),
+			}, nil
+		})},
+	}
+
+	got, err := pollRegistrationUntilComplete(client, "device-code", 1, time.Now().Add(time.Second), func(time.Duration) {})
+	if err != nil {
+		t.Fatalf("pollRegistrationUntilComplete returned error: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2", calls)
+	}
+	if got.AppID != "cli_ok" || got.AppSecret != "sec_ok" || got.OwnerOpenID != "ou_user" || got.Platform != "feishu" {
+		t.Fatalf("result = %+v, want configured Feishu app", got)
 	}
 }

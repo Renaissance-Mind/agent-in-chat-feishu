@@ -2,16 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
@@ -611,52 +614,7 @@ func runRegistrationFlow(opts registrationFlowOptions) (*registrationFlowResult,
 		timeoutAt = limitByFlag
 	}
 
-	platformType := "feishu"
-	for time.Now().Before(timeoutAt) {
-		var pollRes registrationPollResponse
-		if err := client.registrationCall("poll", map[string]string{"device_code": beginRes.DeviceCode}, &pollRes); err != nil {
-			return nil, fmt.Errorf("poll failed: %w", err)
-		}
-
-		tenantBrand := strings.ToLower(strings.TrimSpace(pollRes.UserInfo.TenantBrand))
-		if tenantBrand == "lark" {
-			platformType = "lark"
-			if client.baseURL != accountsLarkBaseURL {
-				client.baseURL = accountsLarkBaseURL
-				if opts.Debug {
-					fmt.Fprintln(os.Stderr, "[debug] tenant brand detected as lark, switched onboarding domain")
-				}
-				continue
-			}
-		}
-
-		if pollRes.ClientID != "" && pollRes.ClientSecret != "" {
-			return &registrationFlowResult{
-				AppID:       pollRes.ClientID,
-				AppSecret:   pollRes.ClientSecret,
-				OwnerOpenID: pollRes.UserInfo.OpenID,
-				Platform:    platformType,
-			}, nil
-		}
-
-		switch pollRes.Error {
-		case "", "authorization_pending":
-		case "slow_down":
-			interval += 5
-		case "access_denied":
-			return nil, fmt.Errorf("authorization denied by user")
-		case "expired_token":
-			return nil, fmt.Errorf("onboarding session expired")
-		default:
-			if pollRes.Error != "" {
-				return nil, fmt.Errorf("%s: %s", pollRes.Error, pollRes.ErrorDescription)
-			}
-		}
-
-		time.Sleep(time.Duration(interval) * time.Second)
-	}
-
-	return nil, fmt.Errorf("timed out waiting for QR onboarding result")
+	return pollRegistrationUntilComplete(client, beginRes.DeviceCode, interval, timeoutAt, time.Sleep)
 }
 
 func (c *registrationClient) registrationCall(action string, params map[string]string, out any) error {
@@ -689,6 +647,103 @@ func (c *registrationClient) registrationCall(action string, params map[string]s
 		return fmt.Errorf("decode response: %w", err)
 	}
 	return nil
+}
+
+func pollRegistrationUntilComplete(client *registrationClient, deviceCode string, interval int, timeoutAt time.Time, sleep func(time.Duration)) (*registrationFlowResult, error) {
+	if interval <= 0 {
+		interval = 5
+	}
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+
+	platformType := "feishu"
+	for time.Now().Before(timeoutAt) {
+		var pollRes registrationPollResponse
+		if err := client.registrationCall("poll", map[string]string{"device_code": deviceCode}, &pollRes); err != nil {
+			if isTransientRegistrationError(err) {
+				sleep(time.Duration(interval) * time.Second)
+				continue
+			}
+			return nil, fmt.Errorf("poll failed: %w", err)
+		}
+
+		tenantBrand := strings.ToLower(strings.TrimSpace(pollRes.UserInfo.TenantBrand))
+		if tenantBrand == "lark" {
+			platformType = "lark"
+			if client.baseURL != accountsLarkBaseURL {
+				client.baseURL = accountsLarkBaseURL
+				if client.debug {
+					fmt.Fprintln(os.Stderr, "[debug] tenant brand detected as lark, switched onboarding domain")
+				}
+				continue
+			}
+		}
+
+		if pollRes.ClientID != "" && pollRes.ClientSecret != "" {
+			return &registrationFlowResult{
+				AppID:       pollRes.ClientID,
+				AppSecret:   pollRes.ClientSecret,
+				OwnerOpenID: pollRes.UserInfo.OpenID,
+				Platform:    platformType,
+			}, nil
+		}
+
+		switch pollRes.Error {
+		case "", "authorization_pending":
+		case "slow_down":
+			interval += 5
+		case "access_denied":
+			return nil, fmt.Errorf("authorization denied by user")
+		case "expired_token":
+			return nil, fmt.Errorf("onboarding session expired")
+		default:
+			if pollRes.Error != "" {
+				return nil, fmt.Errorf("%s: %s", pollRes.Error, pollRes.ErrorDescription)
+			}
+		}
+
+		sleep(time.Duration(interval) * time.Second)
+	}
+
+	return nil, fmt.Errorf("timed out waiting for QR onboarding result")
+}
+
+func isTransientRegistrationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+		return true
+	}
+
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "no such host") {
+		return false
+	}
+	for _, marker := range []string{
+		"connection reset",
+		"broken pipe",
+		"i/o timeout",
+		"tls handshake timeout",
+		"ssl_error_syscall",
+		"connection refused",
+		"server misbehaving",
+		"client.timeout exceeded",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsString(values []string, expected string) bool {
