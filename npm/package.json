@@ -1,6 +1,6 @@
 {
   "name": "@renaissancemind/agent-in-chat-feishu",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "Run local AI coding agents inside Feishu/Lark chat loops.",
   "keywords": [
     "claude-code",
@@ -29,12 +29,12 @@
     "test": "node test-platform-packages.cjs"
   },
   "optionalDependencies": {
-    "@renaissancemind/agent-in-chat-feishu-darwin-arm64": "1.3.5",
-    "@renaissancemind/agent-in-chat-feishu-darwin-x64": "1.3.5",
-    "@renaissancemind/agent-in-chat-feishu-linux-arm64": "1.3.5",
-    "@renaissancemind/agent-in-chat-feishu-linux-x64": "1.3.5",
-    "@renaissancemind/agent-in-chat-feishu-windows-arm64": "1.3.5",
-    "@renaissancemind/agent-in-chat-feishu-windows-x64": "1.3.5"
+    "@renaissancemind/agent-in-chat-feishu-darwin-arm64": "1.3.6",
+    "@renaissancemind/agent-in-chat-feishu-darwin-x64": "1.3.6",
+    "@renaissancemind/agent-in-chat-feishu-linux-arm64": "1.3.6",
+    "@renaissancemind/agent-in-chat-feishu-linux-x64": "1.3.6",
+    "@renaissancemind/agent-in-chat-feishu-windows-arm64": "1.3.6",
+    "@renaissancemind/agent-in-chat-feishu-windows-x64": "1.3.6"
   },
   "publishConfig": {
     "access": "public"
