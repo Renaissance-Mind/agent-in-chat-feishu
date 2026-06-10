@@ -36,7 +36,7 @@ agentchat
 agentchat feishu setup
 ```
 
-终端会打印二维码和 URL。用飞书/Lark 手机 App 扫码后，注册流程通常会创建机器人应用，并预配核心能力。命令结束时会打印权限开通直达链接，链接里已经预选推荐 scopes。
+终端会打印二维码和 URL。用飞书/Lark 手机 App 扫码后，注册流程通常会创建机器人应用，并预配核心能力。命令结束时会打印 `scope-apply` 权限确认直达链接，链接里已经预选推荐 scopes。
 
 完成后建议按终端链接核验：
 
@@ -52,7 +52,7 @@ agentchat feishu setup
 agentchat feishu setup --app cli_xxx:sec_xxx
 ```
 
-这会校验 `app_id/app_secret`，然后写入 `config.toml`。它会打印带预选 scope 的权限开通直达链接，以及对应的权限后台和事件订阅页面。也可以运行 `agentchat feishu permissions --apply`，通过飞书官方接口向租户管理员发起权限申请。
+这会校验 `app_id/app_secret`，然后写入 `config.toml`。它会打印带预选 scope 的 `scope-apply` 权限确认直达链接，以及对应的权限后台和事件订阅页面。也可以运行 `agentchat feishu permissions --apply`，通过飞书官方接口向租户管理员发起权限申请。
 
 之后可随时重新打印这些链接：
 
@@ -160,25 +160,29 @@ Alex：看一下最近上下文，帮我们判断先修哪一个。
 
 | 能力 | 权限或事件 |
 |---|---|
-| 接收群里 @ 机器人消息 | `im.message.receive_v1` 和 `im:message.group_at_msg:readonly` |
+| 获取机器人基础信息 | `application:bot.basic_info:read` |
+| 接收群里 @ 机器人消息 | `im.message.receive_v1`、`im:message.group_at_msg:readonly`、`im:message.group_at_msg.include_bot:readonly` |
 | 接收私聊消息 | `im.message.receive_v1` 和 `im:message.p2p_msg:readonly` |
+| 接收消息已读事件 | `im.message.message_read_v1` |
 | 识别用户进入私聊 | `im.chat.access_event.bot_p2p_chat_entered_v1` 和 `im:chat.access_event.bot_p2p_chat:read` |
 | 拉取群历史上下文和引用消息 | `im:message`、`im:message:readonly`、`im:message.group_msg` |
 | 发送消息 | `im:message` 或 `im:message:send_as_bot` |
 | 回复消息 | `im:message` 或 `im:message:send_as_bot` |
-| 更新进度/状态卡片 | `im:message` |
-| 撤回临时预览消息 | `im:message` |
+| 更新进度/状态卡片 | `im:message:update`、`cardkit:card:write` |
+| 撤回临时预览消息 | `im:message:recall` |
 | 添加/删除表情回复 | `im:message.reactions:write_only` |
 | 上传/下载图片和文件 | `im:resource` |
-| 读取群成员名称 | `im:chat.members:read` 或更宽的群信息权限 |
-| 读取用户名称 | `contact:user.base:readonly` |
+| 读取群信息和群成员名称 | `im:chat:read`、`im:chat.members:bot_access`、`im:chat.members:read` |
+| 读取用户名称 | `contact:contact.base:readonly` |
 | 交互卡片按钮 | 事件 `card.action.trigger` |
 | 机器人自定义菜单回调 | 事件 `application.bot.menu_v6` |
 
-`setup` 打印的权限开通直达链接会预选运行时推荐 scopes：`im:message`、`im:message:readonly`、`im:message:send_as_bot`、`im:message.group_at_msg:readonly`、`im:message.group_msg`、`im:message.p2p_msg:readonly`、`im:message.reactions:write_only`、`im:resource`、`im:chat.access_event.bot_p2p_chat:read`、`im:chat:read`、`im:chat.members:bot_access`、`im:chat.members:read` 和 `contact:user.base:readonly`。如果运行时仍缺权限，日志会包含缺失 scope 和对应的权限开通直达链接。
+`setup` 打印的 `scope-apply` 权限确认直达链接会用逗号分隔的 `scopes` 参数预选运行时推荐 scopes：`application:bot.basic_info:read`、`cardkit:card:write`、`contact:contact.base:readonly`、`im:chat.access_event.bot_p2p_chat:read`、`im:chat.members:bot_access`、`im:chat.members:read`、`im:chat:read`、`im:message`、`im:message.group_at_msg.include_bot:readonly`、`im:message.group_at_msg:readonly`、`im:message.group_msg`、`im:message.p2p_msg:readonly`、`im:message.reactions:write_only`、`im:message:readonly`、`im:message:recall`、`im:message:send_as_bot`、`im:message:update` 和 `im:resource`。如果运行时仍缺权限，日志会包含缺失 scope 和对应的 `scope-apply` 权限确认直达链接。
 
 官方参考：
 
+- [一键创建飞书 Agent 应用](https://open.feishu.cn/document/mcp_open_tools/integrating-agents-with-feishu/overview)
+- [API 权限列表](https://open.feishu.cn/document/ukTMukTMukTM/uYTM5UjL2ETO14iNxkTN/scope-list?lang=zh-CN)
 - [发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)
 - [回复消息](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/reply)
 - [接收消息事件](https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive)

@@ -516,7 +516,8 @@ func printFeishuPermissionGuidance(platformType, appID string) {
 	events := core.FeishuRecommendedBotEvents()
 
 	fmt.Println("🔐 权限与事件配置：")
-	fmt.Printf("   权限开通直达链接: %s\n", core.FeishuPermissionAuthURL(platformType, appID, scopes))
+	fmt.Printf("   权限确认直达链接: %s\n", core.FeishuScopeApplyURL(platformType, appID, scopes))
+	fmt.Printf("   后台快捷添加链接: %s\n", core.FeishuPermissionAuthURL(platformType, appID, scopes))
 	fmt.Printf("   权限后台: %s\n", core.FeishuPermissionConsoleURL(platformType, appID))
 	fmt.Printf("   事件订阅: %s\n", core.FeishuEventConsoleURL(platformType, appID))
 	fmt.Println("   需要的权限 scopes:")

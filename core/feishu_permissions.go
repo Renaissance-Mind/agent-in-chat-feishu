@@ -11,8 +11,6 @@ var feishuPermissionScopePattern = regexp.MustCompile(`\b[a-z][a-z0-9_]*(?::[a-z
 
 var feishuDeprecatedScopeAliases = map[string]string{
 	"im:chat:readonly":               "im:chat:read",
-	"im:message:update":              "im:message",
-	"im:message:recall":              "im:message",
 	"im:message:send":                "im:message",
 	"im:message.history:readonly":    "im:message",
 	"im:message.revert_msg:readonly": "im:message",
@@ -25,19 +23,24 @@ var feishuDeprecatedScopeAliases = map[string]string{
 // attachments, and readable identity mapping.
 func FeishuRecommendedBotScopes() []string {
 	return []string{
+		"application:bot.basic_info:read",
+		"cardkit:card:write",
+		"contact:contact.base:readonly",
+		"im:chat.access_event.bot_p2p_chat:read",
+		"im:chat.members:bot_access",
+		"im:chat.members:read",
+		"im:chat:read",
 		"im:message",
-		"im:message:readonly",
-		"im:message:send_as_bot",
+		"im:message.group_at_msg.include_bot:readonly",
 		"im:message.group_at_msg:readonly",
 		"im:message.group_msg",
 		"im:message.p2p_msg:readonly",
 		"im:message.reactions:write_only",
+		"im:message:readonly",
+		"im:message:recall",
+		"im:message:send_as_bot",
+		"im:message:update",
 		"im:resource",
-		"im:chat.access_event.bot_p2p_chat:read",
-		"im:chat:read",
-		"im:chat.members:bot_access",
-		"im:chat.members:read",
-		"contact:user.base:readonly",
 	}
 }
 
@@ -68,7 +71,7 @@ func FeishuScopeApplyURL(platformType, appID string, scopes []string) string {
 	if len(scopes) == 0 {
 		scopes = FeishuRecommendedBotScopes()
 	}
-	scopeParam := strings.ReplaceAll(url.QueryEscape(strings.Join(scopes, " ")), "+", "%20")
+	scopeParam := url.QueryEscape(strings.Join(scopes, ","))
 	return FeishuOpenPlatformBase(platformType) + "/page/scope-apply?clientID=" + url.QueryEscape(appID) + "&scopes=" + scopeParam
 }
 

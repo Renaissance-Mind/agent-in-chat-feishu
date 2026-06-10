@@ -12,18 +12,24 @@ func TestFeishuScopeApplyURL_DefaultScopes(t *testing.T) {
 	}
 	for _, want := range []string{
 		"clientID=cli_test",
+		"application%3Abot.basic_info%3Aread",
+		"cardkit%3Acard%3Awrite",
+		"contact%3Acontact.base%3Areadonly",
+		"im%3Achat.access_event.bot_p2p_chat%3Aread",
+		"im%3Achat%3Aread",
+		"im%3Achat.members%3Abot_access",
+		"im%3Achat.members%3Aread",
 		"im%3Amessage",
 		"im%3Amessage%3Areadonly",
+		"im%3Amessage%3Arecall",
 		"im%3Amessage%3Asend_as_bot",
+		"im%3Amessage%3Aupdate",
+		"im%3Amessage.group_at_msg.include_bot%3Areadonly",
 		"im%3Amessage.group_at_msg%3Areadonly",
 		"im%3Amessage.group_msg",
 		"im%3Amessage.p2p_msg%3Areadonly",
 		"im%3Amessage.reactions%3Awrite_only",
 		"im%3Aresource",
-		"im%3Achat.access_event.bot_p2p_chat%3Aread",
-		"im%3Achat%3Aread",
-		"im%3Achat.members%3Abot_access",
-		"im%3Achat.members%3Aread",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("url = %q, missing %q", got, want)
@@ -31,8 +37,6 @@ func TestFeishuScopeApplyURL_DefaultScopes(t *testing.T) {
 	}
 	for _, deprecated := range []string{
 		"im%3Achat%3Areadonly",
-		"im%3Amessage%3Aupdate",
-		"im%3Amessage%3Arecall",
 		"im%3Aresource%3Aupload",
 	} {
 		if strings.Contains(got, deprecated) {
@@ -48,7 +52,13 @@ func TestFeishuPermissionAuthURL_DefaultScopes(t *testing.T) {
 	}
 	for _, want := range []string{
 		"q=",
+		"application%3Abot.basic_info%3Aread",
+		"cardkit%3Acard%3Awrite",
+		"contact%3Acontact.base%3Areadonly",
 		"im%3Amessage",
+		"im%3Amessage%3Arecall",
+		"im%3Amessage%3Aupdate",
+		"im%3Amessage.group_at_msg.include_bot%3Areadonly",
 		"im%3Amessage.group_at_msg%3Areadonly",
 		"im%3Amessage.p2p_msg%3Areadonly",
 		"im%3Achat.access_event.bot_p2p_chat%3Aread",
@@ -70,8 +80,8 @@ func TestFeishuScopeApplyURL_LarkCustomScopes(t *testing.T) {
 	if !strings.Contains(got, "clientID=cli+test") {
 		t.Fatalf("url = %q, missing encoded clientID", got)
 	}
-	if !strings.Contains(got, "scopes=im%3Amessage%20im%3Amessage.group_msg") {
-		t.Fatalf("url = %q, missing space-separated scopes", got)
+	if !strings.Contains(got, "scopes=im%3Amessage%2Cim%3Amessage.group_msg") {
+		t.Fatalf("url = %q, missing comma-separated scopes", got)
 	}
 }
 
@@ -101,8 +111,8 @@ func TestFeishuScopesFromPermissionError(t *testing.T) {
 		t.Fatalf("scopes = %#v, want canonical chat scopes", got)
 	}
 
-	got = FeishuScopesFromPermissionError("need im:message:update and im:resource:upload")
-	if strings.Join(got, ",") != "im:message,im:resource" {
-		t.Fatalf("scopes = %#v, want canonical replacement scopes", got)
+	got = FeishuScopesFromPermissionError("need im:message:update, im:message:recall and im:resource:upload")
+	if strings.Join(got, ",") != "im:message:recall,im:message:update,im:resource" {
+		t.Fatalf("scopes = %#v, want update, recall, and canonical resource scopes", got)
 	}
 }
