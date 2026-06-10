@@ -1,6 +1,6 @@
 {
   "name": "@renaissancemind/agent-in-chat-feishu",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Run local AI coding agents inside Feishu/Lark chat loops.",
   "keywords": [
     "claude-code",
