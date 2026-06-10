@@ -484,9 +484,9 @@ func ccSwitchDBCandidates() []string {
 	return candidates
 }
 
-// listCCSwitchProvidersForWeb reads the cc-switch database and returns
+// listCCSwitchProvidersForManagement reads the cc-switch database and returns
 // providers in the format expected by the management API.
-func listCCSwitchProvidersForWeb() ([]core.CCSwitchProviderInfo, error) {
+func listCCSwitchProvidersForManagement() ([]core.CCSwitchProviderInfo, error) {
 	dbPath := findCCSwitchDB()
 	if dbPath == "" {
 		return nil, fmt.Errorf("cc-switch database not found")

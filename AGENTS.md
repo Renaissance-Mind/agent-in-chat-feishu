@@ -10,7 +10,7 @@ Keep:
 - all agent backends in `agent/`
 - core chat/session/runtime behavior in `core/`
 - CLI command `agentchat` in `cmd/agentchat`
-- daemon, web UI, cron, relay, webhook, management API, bridge
+- daemon, cron, relay, webhook, management API, bridge
 
 Do not add bundled adapters for other chat platforms unless the project direction changes explicitly.
 
@@ -21,7 +21,6 @@ Do not add bundled adapters for other chat platforms unless the project directio
 - `core/` — engine, sessions, commands, providers, cron, relay, bridge, management
 - `agent/` — Codex, Claude Code, OpenCode, Gemini, Kimi, Qoder, iFlow, Cursor, ACP, Pi
 - `config/` — config model, setup helpers, config patching
-- `web/` — admin UI
 - `docs/` — public documentation
 - `npm/` — npm wrapper that installs the release binary
 
@@ -32,15 +31,8 @@ Use Go 1.25+.
 Common checks:
 
 ```bash
-go test -tags no_web ./cmd/agentchat ./platform/feishu ./config ./core
-go test -tags no_web ./agent/...
-```
-
-For web changes:
-
-```bash
-cd web
-npm run build
+go test ./cmd/agentchat ./platform/feishu ./config ./core
+go test ./agent/...
 ```
 
 Build:

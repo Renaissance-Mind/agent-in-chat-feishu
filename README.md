@@ -14,19 +14,19 @@ Put Codex, Claude Code, and other coding agents into the Feishu chat loop your t
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Platform](https://img.shields.io/badge/chat-Feishu%20%2F%20Lark-00BFA5)](docs/feishu.md)
 
-`agent-in-chat-feishu` is a Feishu/Lark-only distribution derived from cc-connect. It keeps the mature agent runtime, sessions, slash commands, providers, progress cards, attachments, cron jobs, relay, web UI, and multi-agent support, while removing the concrete adapters for other chat apps.
+`agent-in-chat-feishu` is a Feishu/Lark-only distribution derived from cc-connect. It keeps the mature agent runtime, sessions, slash commands, providers, progress cards, attachments, cron jobs, relay, management API, and multi-agent support, while removing the concrete adapters for other chat apps and the unused browser admin UI.
 
 The point is not to make your group chat feel like a bot room. The agent joins the ordinary conversation loop: people talk normally, mention the bot when work should happen, and Codex receives the missing group context before it starts.
 
 ## Features
 
 - 💬 **Feishu/Lark first** — bot setup, message receive, reply, cards, reactions, attachments, group history context.
-- 🧠 **Agent runtime preserved** — `/model`, `/stop`, `/new`, `/list`, `/switch`, `/history`, `/provider`, `/cron`, `/dir`, `/mode`, `/usage`, `/commands`, `/alias`, `/delete`, `/bind`, `/web`, `/workspace`.
+- 🧠 **Agent runtime preserved** — `/model`, `/stop`, `/new`, `/list`, `/switch`, `/history`, `/provider`, `/cron`, `/dir`, `/mode`, `/usage`, `/commands`, `/alias`, `/delete`, `/bind`, `/workspace`.
 - 🤝 **Many agents** — Codex, Claude Code, OpenCode, Gemini, Kimi, Qoder, iFlow, Cursor, ACP, Pi.
 - 🧩 **Real chat context** — on mention, recent Feishu group history can be fetched, filtered, cached, and injected as background context.
 - 🪪 **Readable identities** — Feishu user/app/chat names are cached on disk under `~/.agentchat` so Codex sees names instead of long IDs whenever possible.
 - 📌 **Less noise by default** — progress cards are ignored when building group context; readable final reply cards still count.
-- 🛠️ **Operational surface kept** — daemon mode, management API, webhook, web UI, cron/heartbeat, relay, session store, provider switching, and attachment send-back.
+- 🛠️ **Operational surface kept** — daemon mode, management API, webhook, cron/heartbeat, relay, session store, provider switching, and attachment send-back.
 
 ## How It Feels
 
@@ -186,7 +186,6 @@ Examples you can send in Feishu:
 /cron
 /mode
 /usage
-/web
 ```
 
 The CLI is `agentchat`:
@@ -195,7 +194,6 @@ The CLI is `agentchat`:
 agentchat sessions list
 agentchat send --session <session-id> --message "ship a short status update"
 agentchat daemon start
-agentchat web
 ```
 
 ## Documentation

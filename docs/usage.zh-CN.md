@@ -2,7 +2,7 @@
 
 [English README](../README.md) | [中文 README](../README.zh-CN.md)
 
-本文档说明 `agent-in-chat-feishu` 保留下来的 cc-connect 运行时能力。聊天平台只保留 Feishu/Lark；Agent、会话、模型提供方、命令、daemon、Web UI、cron、relay、webhook 和 management API 能力继续保留。
+本文档说明 `agent-in-chat-feishu` 保留下来的 cc-connect 运行时能力。聊天平台只保留 Feishu/Lark；Agent、会话、模型提供方、命令、daemon、cron、relay、webhook 和 management API 能力继续保留。
 
 ## 飞书配置
 
@@ -76,7 +76,6 @@ type = "codex"
 | `/dir` 或 `/cd` | 查看或切换工作目录 |
 | `/usage` | 查看用量/额度 |
 | `/cron` | 管理定时任务 |
-| `/web` | 查看 Web UI 信息 |
 | `/commands` | 查看自定义命令 |
 | `/alias` | 管理命令别名 |
 | `/delete` | 删除会话 |
@@ -214,13 +213,12 @@ curl -X POST 'http://localhost:9111/hook/prompt' \
   -d '{"project":"my-project","session_key":"feishu:oc_xxx","prompt":"Review the latest commit"}'
 ```
 
-## Daemon 和 Web UI
+## Daemon
 
 ```bash
 agentchat daemon start
 agentchat daemon status
 agentchat daemon logs
-agentchat web
 ```
 
 ## Management API

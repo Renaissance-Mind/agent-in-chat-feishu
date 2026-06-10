@@ -26,13 +26,6 @@ Before opening a PR:
 go test ./...
 ```
 
-Also run frontend checks when web UI code changes:
-
-```bash
-cd web
-npm run build
-```
-
 Please update docs when a config field, command, permission, or setup flow changes.
 
 ## Scope
@@ -44,7 +37,7 @@ Good contributions:
 - agent runtime compatibility
 - slash commands and session behavior
 - provider/model management
-- daemon, web UI, cron, relay, webhook, management API
+- daemon, cron, relay, webhook, management API
 - tests and docs
 
 Out of scope for this distribution:
@@ -72,13 +65,6 @@ Out of scope for this distribution:
 
 ```bash
 go test ./...
-```
-
-如果修改了 Web UI：
-
-```bash
-cd web
-npm run build
 ```
 
 如果改动影响配置项、命令、权限或 setup 流程，请同步更新文档。

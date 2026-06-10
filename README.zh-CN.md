@@ -14,19 +14,19 @@
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Platform](https://img.shields.io/badge/chat-Feishu%20%2F%20Lark-00BFA5)](docs/feishu.md)
 
-`agent-in-chat-feishu` 是从 cc-connect 派生出来的飞书/Lark 专用版本。它保留成熟的 Agent 运行时、会话、斜杠命令、模型提供方、进度卡片、附件、定时任务、relay、Web UI 和多 Agent 支持，同时移除了其他聊天软件的具体适配器。
+`agent-in-chat-feishu` 是从 cc-connect 派生出来的飞书/Lark 专用版本。它保留成熟的 Agent 运行时、会话、斜杠命令、模型提供方、进度卡片、附件、定时任务、relay、management API 和多 Agent 支持，同时移除了其他聊天软件的具体适配器以及未使用的浏览器管理前端。
 
 它的重点不是“在群里放一个问答机器人”，而是让 Agent 进入正常聊天 loop：大家照常讨论，需要执行时 @ 它，它会先补齐最近群聊上下文，再开始工作。
 
 ## 特性
 
 - 💬 **专注飞书/Lark**：机器人配置、收消息、回复、卡片、表情、附件、群历史上下文。
-- 🧠 **保留 cc-connect 核心能力**：`/model`、`/stop`、`/new`、`/list`、`/switch`、`/history`、`/provider`、`/cron`、`/dir`、`/mode`、`/usage`、`/commands`、`/alias`、`/delete`、`/bind`、`/web`、`/workspace`。
+- 🧠 **保留 cc-connect 核心能力**：`/model`、`/stop`、`/new`、`/list`、`/switch`、`/history`、`/provider`、`/cron`、`/dir`、`/mode`、`/usage`、`/commands`、`/alias`、`/delete`、`/bind`、`/workspace`。
 - 🤝 **保留多 Agent 支持**：Codex、Claude Code、OpenCode、Gemini、Kimi、Qoder、iFlow、Cursor、ACP、Pi。
 - 🧩 **真实聊天上下文**：被 @ 时可以拉取最近群历史，过滤、缓存后作为背景上下文发送给 Agent。
 - 🪪 **更短、更可读的身份信息**：飞书用户、应用和群名称会落盘缓存在 `~/.agentchat`，Codex 尽量看到名字而不是长 ID。
 - 📌 **默认少看噪声**：构建群上下文时跳过进度卡片；可读的最终回复卡片仍会进入上下文。
-- 🛠️ **保留运行管理面**：daemon、management API、webhook、Web UI、cron/heartbeat、relay、session store、provider 切换、附件回传。
+- 🛠️ **保留运行管理面**：daemon、management API、webhook、cron/heartbeat、relay、session store、provider 切换、附件回传。
 
 ## 日常场景
 
@@ -185,7 +185,6 @@ reaction_emoji = "OnIt"
 /cron
 /mode
 /usage
-/web
 ```
 
 本地 CLI 叫 `agentchat`：
@@ -194,7 +193,6 @@ reaction_emoji = "OnIt"
 agentchat sessions list
 agentchat send --session <session-id> --message "发一条简短状态更新"
 agentchat daemon start
-agentchat web
 ```
 
 ## 文档

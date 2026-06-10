@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Forked into a Feishu/Lark-only distribution named `agent-in-chat-feishu`.
-- Kept cc-connect core agent runtime, session management, chat commands, providers, daemon, web UI, cron, relay, webhook, bridge, and management API.
+- Kept cc-connect core agent runtime, session management, chat commands, providers, daemon, cron, relay, webhook, bridge, and management API.
 - Kept supported agent backends: Codex, Claude Code, OpenCode, Gemini, Kimi, Qoder, iFlow, Cursor, ACP, and Pi.
 - Removed bundled non-Feishu chat platform adapters and user-facing docs for those adapters.
 - Renamed the CLI command to `agentchat`.

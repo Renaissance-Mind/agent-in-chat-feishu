@@ -35,7 +35,6 @@ PLATFORMS := \
 
 ALL_AGENTS    := acp claudecode codex cursor gemini iflow kimi opencode pi qoder
 ALL_PLATFORMS := feishu
-ALL_EXTRAS    := web
 
 COMMA := ,
 
@@ -58,24 +57,13 @@ ifdef EXCLUDE
   _EXCLUDE_TAGS += $(addprefix no_,$(subst $(COMMA), ,$(EXCLUDE)))
 endif
 
-ifdef NO_WEB
-  _EXCLUDE_TAGS += no_web
-endif
-
 _BUILD_TAGS := $(strip $(_EXCLUDE_TAGS))
 _TAGS_FLAG  := $(if $(_BUILD_TAGS),-tags '$(_BUILD_TAGS)',)
 
-.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-performance pre-test lint release release-all web
+.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-performance pre-test lint release release-all
 
-web:
-	@if [ ! -d web/node_modules ]; then cd web && npm install; fi
-	cd web && npm run build
-
-build: web
+build:
 	go build $(_TAGS_FLAG) -ldflags "$(LDFLAGS)" -o $(APP) $(CMD)
-
-build-noweb:
-	go build $(_TAGS_FLAG) -tags 'no_web' -ldflags "$(LDFLAGS)" -o $(APP) $(CMD)
 
 run: build
 	./$(APP)

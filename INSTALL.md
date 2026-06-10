@@ -130,12 +130,6 @@ lives in a custom path manager, pass it explicitly:
 agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
 ```
 
-Web UI:
-
-```bash
-agentchat web
-```
-
 ## 6. Try It In Feishu
 
 Mention the bot in a group:
@@ -156,7 +150,6 @@ Useful chat commands:
 /cron
 /mode
 /usage
-/web
 ```
 
 ## 7. Runtime Data

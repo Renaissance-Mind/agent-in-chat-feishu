@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -31,7 +30,7 @@ type ProjectSettingsUpdate struct {
 }
 
 // ManagementServer provides an HTTP REST API for external management tools
-// (web dashboards, TUI clients, GUI desktop apps, Mac tray apps, etc.).
+// (TUI clients, GUI desktop apps, Mac tray apps, automation, etc.).
 type ManagementServer struct {
 	port        int
 	token       string
@@ -240,8 +239,7 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	// Bridge
 	mux.HandleFunc(prefix+"/bridge/adapters", m.wrap(m.handleBridgeAdapters))
 
-	// Static file serving for agentchat-web (SPA)
-	return m.withStaticFallback(mux)
+	return m.withBridgeProxy(mux)
 }
 
 func (m *ManagementServer) Stop() {
@@ -250,47 +248,16 @@ func (m *ManagementServer) Stop() {
 	}
 }
 
-// withStaticFallback wraps the API mux with a file server for the web UI.
-// API requests (/api/) go to the mux; everything else tries embedded static
-// files, falling back to index.html for SPA routing.
-func (m *ManagementServer) withStaticFallback(apiMux *http.ServeMux) http.Handler {
+// withBridgeProxy keeps the bridge websocket endpoint reachable from the
+// management server when both servers are wired together. All other requests
+// are handled by the API mux.
+func (m *ManagementServer) withBridgeProxy(apiMux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
 		if m.bridgeServer != nil && r.URL.Path == m.bridgeServer.path {
 			m.bridgeServer.handleWS(w, r)
 			return
 		}
-		assets := GetWebAssets()
-		if assets == nil {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
-		m.setCORS(w, r)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		// Try to serve the exact file from the embedded FS.
-		urlPath := strings.TrimPrefix(r.URL.Path, "/")
-		if urlPath == "" {
-			urlPath = "index.html"
-		}
-		if f, err := assets.Open(urlPath); err == nil {
-			f.Close()
-			http.FileServer(http.FS(assets)).ServeHTTP(w, r)
-			return
-		}
-		// SPA fallback: serve index.html for any non-file route.
-		indexData, err := fs.ReadFile(assets, "index.html")
-		if err != nil {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(indexData)
+		apiMux.ServeHTTP(w, r)
 	})
 }
 

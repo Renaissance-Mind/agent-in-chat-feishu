@@ -2,7 +2,7 @@
 
 [English README](../README.md) | [中文 README](../README.zh-CN.md)
 
-This guide covers the retained cc-connect runtime features in `agent-in-chat-feishu`. The chat platform surface is Feishu/Lark only; the agent, session, provider, command, daemon, web, cron, relay, webhook, and management features remain.
+This guide covers the retained cc-connect runtime features in `agent-in-chat-feishu`. The chat platform surface is Feishu/Lark only; the agent, session, provider, command, daemon, cron, relay, webhook, and management features remain.
 
 ## Feishu Setup
 
@@ -77,7 +77,6 @@ Send these in Feishu:
 | `/dir` or `/cd` | Show or switch work directory |
 | `/usage` | Show usage/quota when supported |
 | `/cron` | Manage scheduled jobs |
-| `/web` | Open web UI information |
 | `/commands` | List custom commands |
 | `/alias` | Manage command aliases |
 | `/delete` | Delete sessions |
@@ -215,13 +214,12 @@ curl -X POST 'http://localhost:9111/hook/prompt' \
   -d '{"project":"my-project","session_key":"feishu:oc_xxx","prompt":"Review the latest commit"}'
 ```
 
-## Daemon And Web UI
+## Daemon
 
 ```bash
 agentchat daemon start
 agentchat daemon status
 agentchat daemon logs
-agentchat web
 ```
 
 ## Management API

@@ -892,8 +892,8 @@ func (a *bridgeAdapter) dispatchAsMessage(ref *bridgeEngineRef, sessionKey, repl
 	msg := &Message{
 		SessionKey: sessionKey,
 		Platform:   a.platform,
-		UserID:     "web-admin",
-		UserName:   "Web Admin",
+		UserID:     "bridge-admin",
+		UserName:   "Bridge Admin",
 		Content:    content,
 		ReplyCtx:   newBridgeReplyCtx(a, sessionKey, replyCtx),
 	}

@@ -85,9 +85,6 @@ func main() {
 		case "doctor":
 			runDoctor(os.Args[2:])
 			return
-		case "web":
-			runWeb(os.Args[2:])
-			return
 		}
 	}
 
@@ -634,27 +631,6 @@ func main() {
 			return reloadConfig(configPath, capturedProjName, capturedEngine)
 		})
 
-		// Wire /web command callbacks
-		engine.SetWebSetupFunc(func() (int, string, bool, error) {
-			mgmtToken := core.GenerateToken(16)
-			bridgeToken := core.GenerateToken(16)
-			result, err := config.EnableWebAdmin(mgmtToken, bridgeToken)
-			if err != nil {
-				return 0, "", false, err
-			}
-			return result.ManagementPort, result.ManagementToken, !result.AlreadyEnabled, nil
-		})
-		engine.SetWebStatusFunc(func() string {
-			if cfg.Management.Enabled == nil || !*cfg.Management.Enabled {
-				return ""
-			}
-			port := cfg.Management.Port
-			if port == 0 {
-				port = 9820
-			}
-			return fmt.Sprintf("http://localhost:%d", port)
-		})
-
 		engines = append(engines, engine)
 		effectiveWorkDirs = append(effectiveWorkDirs, effectiveWorkDir)
 	}
@@ -886,7 +862,7 @@ func main() {
 		if cfg.ProviderPresetsURL != "" {
 			core.SetPresetsURL(cfg.ProviderPresetsURL)
 		}
-		mgmtSrv.SetListCCSwitchProviders(listCCSwitchProvidersForWeb)
+		mgmtSrv.SetListCCSwitchProviders(listCCSwitchProvidersForManagement)
 		mgmtSrv.Start()
 	}
 
