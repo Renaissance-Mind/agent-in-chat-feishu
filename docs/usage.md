@@ -7,35 +7,31 @@ This guide covers the retained cc-connect runtime features in `agent-in-chat-fei
 ## Feishu Setup
 
 ```bash
-agentchat feishu setup
-agentchat feishu setup --app cli_xxx:sec_xxx
+agentchat setup feishu
+agentchat setup feishu --app cli_xxx:sec_xxx
 agentchat feishu permissions
 ```
 
-Without `--project`, setup uses the local bot profile `feishu` and initial work directory `~/.agentchat/feishu/`. You can switch to the real code repository later from chat with `/dir` or `/workspace`.
+Without `--project`, setup uses Codex as the default agent, the local bot profile `feishu`, and initial work directory `~/.agentchat/feishu/`. You can switch to the real code repository later from chat with `/dir` or `/workspace`.
 
-Then start:
-
-```bash
-agentchat
-```
+After setup succeeds, it installs and starts the background service by default, opens the permission confirmation page when possible, and prints the direct permission confirmation link as the final step. Use `agentchat setup feishu --no-start` when you only want to write config.
 
 See [Feishu setup guide](feishu.md) for permissions, events, and group history behavior.
 
 ## Daemon Mode
 
-Install the background service after `setup` has created the config directory:
+Common background service commands:
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat
+agentchat daemon status
+agentchat daemon logs -f
+agentchat daemon restart
 ```
 
-The service captures the installer process `PATH`, matching cc-connect behavior.
-If you install from a non-interactive shell or use custom Node/agent managers,
-pass an explicit value:
+Automatic setup captures the installer process `PATH`, matching cc-connect behavior. If you install from a non-interactive shell or use custom Node/agent managers, pass an explicit value:
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+agentchat setup feishu --daemon-env-path "$PATH"
 ```
 
 ## Supported Agents

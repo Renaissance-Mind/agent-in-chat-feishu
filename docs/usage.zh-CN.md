@@ -7,34 +7,31 @@
 ## 飞书配置
 
 ```bash
-agentchat feishu setup
-agentchat feishu setup --app cli_xxx:sec_xxx
+agentchat setup feishu
+agentchat setup feishu --app cli_xxx:sec_xxx
 agentchat feishu permissions
 ```
 
-不传 `--project` 时，默认使用本地机器人配置 `feishu`，初始工作目录为 `~/.agentchat/feishu/`。后续可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。
+不传 `--project` 时，默认连接 Codex，使用本地机器人配置 `feishu`，初始工作目录为 `~/.agentchat/feishu/`。后续可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。
 
-启动：
-
-```bash
-agentchat
-```
+`setup` 成功后会默认安装并启动后台服务，尽量自动打开权限确认页面，并把权限确认直达链接作为最后一步打印出来。需要只写配置不启动时，使用 `agentchat setup feishu --no-start`。
 
 权限、事件订阅和群历史上下文见 [飞书接入指南](feishu.md)。
 
 ## Daemon 后台服务
 
-`setup` 创建配置目录后，可以安装后台服务：
+后台服务常用管理命令：
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat
+agentchat daemon status
+agentchat daemon logs -f
+agentchat daemon restart
 ```
 
-服务会记录安装进程的 `PATH`，与 cc-connect 行为一致。如果你从非交互 shell
-安装，或 Node、Agent CLI、`lark-cli` 来自自定义路径管理器，可以显式传入：
+setup 自动安装服务时会记录安装进程的 `PATH`，与 cc-connect 行为一致。如果你从非交互 shell 安装，或 Node、Agent CLI、`lark-cli` 来自自定义路径管理器，可以显式传入：
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+agentchat setup feishu --daemon-env-path "$PATH"
 ```
 
 ## 支持的 Agent

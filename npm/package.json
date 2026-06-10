@@ -25,6 +25,7 @@
   },
   "scripts": {
     "build:platform-packages": "node build-platform-packages.cjs",
+    "postinstall": "node postinstall.cjs",
     "test": "node test-platform-packages.cjs"
   },
   "optionalDependencies": {
@@ -40,6 +41,7 @@
   },
   "files": [
     "run.js",
+    "postinstall.cjs",
     "README.md"
   ]
 }

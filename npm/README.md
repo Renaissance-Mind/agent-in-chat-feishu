@@ -20,11 +20,10 @@ agentchat
 ## Quick Start
 
 ```bash
-agentchat feishu setup
-agentchat
+agentchat setup feishu
 ```
 
-Without `--project`, setup creates the local bot profile `feishu` with initial work directory `~/.agentchat/feishu/`.
+Without `--project`, setup uses Codex as the default agent, creates the local bot profile `feishu` with initial work directory `~/.agentchat/feishu/`, then installs and starts the background service. It also opens the Feishu permission page when possible and prints the direct permission confirmation link as the final step. Use `agentchat daemon status` or `agentchat daemon logs -f` to inspect it.
 
 ## Documentation
 

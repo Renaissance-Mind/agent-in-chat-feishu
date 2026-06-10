@@ -13,6 +13,17 @@ import (
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/daemon"
 )
 
+var daemonManagerFactory = daemon.NewManager
+
+type daemonInstallResult struct {
+	Platform   string
+	BinaryPath string
+	WorkDir    string
+	LogFile    string
+	LogMaxSize int64
+	Warnings   []string
+}
+
 func runDaemon(args []string) {
 	if len(args) == 0 {
 		printDaemonUsage()
@@ -50,35 +61,45 @@ func daemonInstall(args []string) {
 		os.Exit(1)
 	}
 
-	if err := daemon.Resolve(&cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	configPath := cfg.WorkDir + "/config.toml"
-	if _, err := os.Stat(configPath); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: config.toml not found in %s\n", cfg.WorkDir)
-		fmt.Fprintf(os.Stderr, "  Use --work-dir to specify the config directory or --config to point to the config file\n")
-		os.Exit(1)
-	}
-
-	mgr, err := daemon.NewManager()
+	result, err := installDaemonService(cfg, force)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
 		os.Exit(1)
+	}
+	printDaemonInstallResult(result)
+}
+
+func installDaemonService(cfg daemon.Config, force bool) (*daemonInstallResult, error) {
+	if err := daemon.Resolve(&cfg); err != nil {
+		return nil, err
+	}
+
+	configPath := filepath.Join(cfg.WorkDir, "config.toml")
+	if _, err := os.Stat(configPath); err != nil {
+		return nil, fmt.Errorf("config.toml not found in %s; use --work-dir to specify the config directory or --config to point to the config file", cfg.WorkDir)
+	}
+
+	mgr, err := daemonManagerFactory()
+	if err != nil {
+		return nil, err
 	}
 
 	st, _ := mgr.Status()
 	if st != nil && st.Installed && !force {
-		fmt.Fprintf(os.Stderr, "Service already installed. Use --force to reinstall.\n")
-		os.Exit(1)
+		return nil, fmt.Errorf("service already installed; use --force to reinstall")
 	}
 
 	if err := mgr.Install(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Install failed: %v\n", err)
-		os.Exit(1)
+		return nil, err
 	}
 
+	result := &daemonInstallResult{
+		Platform:   mgr.Platform(),
+		BinaryPath: cfg.BinaryPath,
+		WorkDir:    cfg.WorkDir,
+		LogFile:    cfg.LogFile,
+		LogMaxSize: cfg.LogMaxSize,
+	}
 	if err := daemon.SaveMeta(&daemon.Meta{
 		LogFile:     cfg.LogFile,
 		LogMaxSize:  cfg.LogMaxSize,
@@ -86,16 +107,22 @@ func daemonInstall(args []string) {
 		BinaryPath:  cfg.BinaryPath,
 		InstalledAt: daemon.NowISO(),
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to save metadata: %v\n", err)
+		result.Warnings = append(result.Warnings, fmt.Sprintf("failed to save metadata: %v", err))
 	}
+	return result, nil
+}
 
+func printDaemonInstallResult(result *daemonInstallResult) {
+	for _, warning := range result.Warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", warning)
+	}
 	fmt.Println("agentchat daemon installed and started.")
 	fmt.Println()
-	fmt.Printf("  Platform:  %s\n", mgr.Platform())
-	fmt.Printf("  Binary:    %s\n", cfg.BinaryPath)
-	fmt.Printf("  WorkDir:   %s\n", cfg.WorkDir)
-	fmt.Printf("  Log:       %s\n", cfg.LogFile)
-	fmt.Printf("  LogMax:    %d MB\n", cfg.LogMaxSize/1024/1024)
+	fmt.Printf("  Platform:  %s\n", result.Platform)
+	fmt.Printf("  Binary:    %s\n", result.BinaryPath)
+	fmt.Printf("  WorkDir:   %s\n", result.WorkDir)
+	fmt.Printf("  Log:       %s\n", result.LogFile)
+	fmt.Printf("  LogMax:    %d MB\n", result.LogMaxSize/1024/1024)
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  agentchat daemon status    - Check status")
@@ -387,7 +414,7 @@ func followFile(path string) {
 // ── helpers ─────────────────────────────────────────────────
 
 func mustManager() daemon.Manager {
-	mgr, err := daemon.NewManager()
+	mgr, err := daemonManagerFactory()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

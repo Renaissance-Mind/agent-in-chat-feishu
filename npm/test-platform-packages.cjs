@@ -26,14 +26,23 @@ function platformPackageName(osName, archName) {
 }
 
 test("main npm package depends on platform-specific binary packages", () => {
-  assert.equal(pkg.scripts && pkg.scripts.postinstall, undefined);
-  assert.deepEqual(pkg.files, ["run.js", "README.md"]);
+  assert.equal(pkg.scripts && pkg.scripts.postinstall, "node postinstall.cjs");
+  assert.deepEqual(pkg.files, ["run.js", "postinstall.cjs", "README.md"]);
 
   const expectedDeps = {};
   for (const [nodeOS, nodeArch] of targets) {
     expectedDeps[platformPackageName(nodeOS, nodeArch)] = pkg.version;
   }
   assert.deepEqual(pkg.optionalDependencies, expectedDeps);
+});
+
+test("postinstall message points users to setup feishu", () => {
+  const output = execFileSync(process.execPath, [path.join(npmDir, "postinstall.cjs")], {
+    cwd: npmDir,
+    encoding: "utf8",
+  });
+  assert.match(output, /agentchat setup feishu/);
+  assert.match(output, /Codex/);
 });
 
 test("build-platform-packages creates npm packages from release binaries", () => {

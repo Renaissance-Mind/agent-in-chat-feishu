@@ -74,6 +74,30 @@ func TestProjectStatePath(t *testing.T) {
 	}
 }
 
+func TestParseSetupCommandRoutesFeishu(t *testing.T) {
+	target, rest, err := parseSetupCommand([]string{"feishu", "--app", "cli_xxx:sec_xxx"})
+	if err != nil {
+		t.Fatalf("parseSetupCommand returned error: %v", err)
+	}
+	if target != "feishu" {
+		t.Fatalf("target = %q, want feishu", target)
+	}
+	want := []string{"--app", "cli_xxx:sec_xxx"}
+	if !reflect.DeepEqual(rest, want) {
+		t.Fatalf("rest = %#v, want %#v", rest, want)
+	}
+}
+
+func TestParseSetupCommandRejectsUnknownTarget(t *testing.T) {
+	_, _, err := parseSetupCommand([]string{"slack"})
+	if err == nil {
+		t.Fatal("expected unknown setup target error, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown setup target") {
+		t.Fatalf("error = %v, want unknown target guidance", err)
+	}
+}
+
 func TestApplyProjectStateOverride(t *testing.T) {
 	baseDir := t.TempDir()
 	overrideDir := filepath.Join(t.TempDir(), "override")

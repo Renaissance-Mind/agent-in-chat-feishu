@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
+	"github.com/Renaissance-Mind/agent-in-chat-feishu/daemon"
 )
 
 func TestResolveFeishuSetupInputs_AutoModeWithoutCredentialsUsesNew(t *testing.T) {
@@ -91,6 +92,61 @@ func TestResolveTargetProjectDefaultsToFeishu(t *testing.T) {
 	}
 	if got != "feishu" {
 		t.Fatalf("resolveTargetProject = %q, want feishu", got)
+	}
+}
+
+func TestInstallFeishuSetupDaemonUsesConfigDirectoryAndReinstalls(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(configPath, []byte("language = \"zh\"\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	prevConfigPath := config.ConfigPath
+	config.ConfigPath = configPath
+	t.Cleanup(func() { config.ConfigPath = prevConfigPath })
+
+	mgr := &recordingDaemonManager{status: &daemon.Status{Installed: true, Platform: "testd"}}
+	prevFactory := daemonManagerFactory
+	daemonManagerFactory = func() (daemon.Manager, error) { return mgr, nil }
+	t.Cleanup(func() { daemonManagerFactory = prevFactory })
+
+	result, err := installFeishuSetupDaemon("/env/bin")
+	if err != nil {
+		t.Fatalf("installFeishuSetupDaemon returned error: %v", err)
+	}
+	if !mgr.installCalled {
+		t.Fatal("expected daemon install to be called even when service already exists")
+	}
+	if mgr.installCfg.WorkDir != dir {
+		t.Fatalf("WorkDir = %q, want config directory %q", mgr.installCfg.WorkDir, dir)
+	}
+	if mgr.installCfg.EnvPATH != "/env/bin" {
+		t.Fatalf("EnvPATH = %q, want forwarded daemon PATH", mgr.installCfg.EnvPATH)
+	}
+	if result.WorkDir != dir {
+		t.Fatalf("result WorkDir = %q, want %q", result.WorkDir, dir)
+	}
+}
+
+func TestBuildFeishuPermissionGuidancePutsScopeApplyURLLast(t *testing.T) {
+	guidance := buildFeishuPermissionGuidance("feishu", "cli_abc")
+	if guidance.ScopeApplyURL == "" {
+		t.Fatal("ScopeApplyURL is empty")
+	}
+	output := guidance.String()
+	if !strings.Contains(output, "权限确认直达链接") {
+		t.Fatalf("guidance output missing direct permission link label:\n%s", output)
+	}
+
+	trimmed := strings.TrimSpace(output)
+	if !strings.HasSuffix(trimmed, guidance.ScopeApplyURL) {
+		t.Fatalf("guidance should end with scope apply URL\noutput:\n%s\nurl:\n%s", output, guidance.ScopeApplyURL)
+	}
+	if strings.LastIndex(output, guidance.ScopeApplyURL) < strings.LastIndex(output, "事件订阅") {
+		t.Fatalf("scope apply URL should appear after event guidance:\n%s", output)
 	}
 }
 

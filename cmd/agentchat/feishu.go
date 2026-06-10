@@ -12,13 +12,16 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/core"
+	"github.com/Renaissance-Mind/agent-in-chat-feishu/daemon"
 	qrterminal "github.com/mdp/qrterminal/v3"
 	"rsc.io/qr"
 )
@@ -88,11 +91,22 @@ type feishuPermissionApplyResult struct {
 	Duplicate bool
 }
 
+type feishuPermissionGuidance struct {
+	Scopes               []string
+	Events               []string
+	ScopeApplyURL        string
+	PermissionAuthURL    string
+	PermissionConsoleURL string
+	EventConsoleURL      string
+}
+
 type registrationClient struct {
 	baseURL string
 	http    *http.Client
 	debug   bool
 }
+
+var openBrowserURL = openURL
 
 type registrationFlowOptions struct {
 	TimeoutSeconds int
@@ -143,6 +157,8 @@ func runFeishuSetup(args []string, requestedMode string) {
 	timeout := fs.Int("timeout", 600, "QR onboarding timeout in seconds")
 	qrImage := fs.String("qr-image", "", "save QR code as PNG image to this path (e.g. qr.png)")
 	setAllowFromEmpty := fs.Bool("set-allow-from-empty", false, "merge owner open_id into allow_from when onboarding returns it (preserves *)")
+	noStart := fs.Bool("no-start", false, "write config only; do not install/start the background service")
+	daemonEnvPath := fs.String("daemon-env-path", "", "PATH for the auto-started daemon (default: current PATH)")
 	debug := fs.Bool("debug", false, "print debug logs for onboarding requests")
 	_ = fs.Parse(args)
 
@@ -265,9 +281,29 @@ func runFeishuSetup(args []string, requestedMode string) {
 	}
 
 	printBotMenuGuidance(saveResult.PlatformType)
-	printFeishuPermissionGuidance(saveResult.PlatformType, resolvedAppID)
+	permissionGuidance := buildFeishuPermissionGuidance(saveResult.PlatformType, resolvedAppID)
+
+	fmt.Println()
+	if *noStart {
+		workDir := feishuSetupDaemonWorkDir()
+		fmt.Println("Skipped daemon auto-start (--no-start).")
+		fmt.Printf("To run in the foreground: agentchat --config %s\n", config.ConfigPath)
+		fmt.Printf("To install later: agentchat daemon install --work-dir %s --force\n", workDir)
+		fmt.Println()
+	} else {
+		daemonResult, err := installFeishuSetupDaemon(*daemonEnvPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: config saved but daemon auto-start failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "After fixing the issue, run: agentchat daemon install --work-dir %s --force\n", feishuSetupDaemonWorkDir())
+			os.Exit(1)
+		}
+		printDaemonInstallResult(daemonResult)
+		fmt.Println()
+		fmt.Println("agentchat is running in the background. After Feishu permissions/events are approved and published, test it in Feishu directly.")
+	}
 
 	fmt.Println("提醒：扫码新建通常会自动预配权限与事件订阅；请在开放平台核验发布状态与可用范围。")
+	printFeishuSetupPermissionFinalStep(permissionGuidance)
 }
 
 func setupOwnerOpenIDForConfig(ownerOpenID, botOpenID string) string {
@@ -507,29 +543,68 @@ func resolveFeishuPermissionTarget(projectName, platformType string, platformInd
 	return feishuPermissionTarget{}, fmt.Errorf("project %q not found", targetProject)
 }
 
-func printFeishuPermissionGuidance(platformType, appID string) {
+func buildFeishuPermissionGuidance(platformType, appID string) feishuPermissionGuidance {
 	appID = strings.TrimSpace(appID)
 	if appID == "" {
-		return
+		return feishuPermissionGuidance{}
 	}
 	scopes := core.FeishuRecommendedBotScopes()
 	events := core.FeishuRecommendedBotEvents()
 
-	fmt.Println("🔐 权限与事件配置：")
-	fmt.Printf("   权限确认直达链接: %s\n", core.FeishuScopeApplyURL(platformType, appID, scopes))
-	fmt.Printf("   后台快捷添加链接: %s\n", core.FeishuPermissionAuthURL(platformType, appID, scopes))
-	fmt.Printf("   权限后台: %s\n", core.FeishuPermissionConsoleURL(platformType, appID))
-	fmt.Printf("   事件订阅: %s\n", core.FeishuEventConsoleURL(platformType, appID))
-	fmt.Println("   需要的权限 scopes:")
-	for _, scope := range scopes {
-		fmt.Printf("     - %s\n", scope)
+	return feishuPermissionGuidance{
+		Scopes:               scopes,
+		Events:               events,
+		ScopeApplyURL:        core.FeishuScopeApplyURL(platformType, appID, scopes),
+		PermissionAuthURL:    core.FeishuPermissionAuthURL(platformType, appID, scopes),
+		PermissionConsoleURL: core.FeishuPermissionConsoleURL(platformType, appID),
+		EventConsoleURL:      core.FeishuEventConsoleURL(platformType, appID),
 	}
-	fmt.Println("   需要的事件:")
-	for _, event := range events {
-		fmt.Printf("     - %s\n", event)
+}
+
+func (g feishuPermissionGuidance) String() string {
+	if g.ScopeApplyURL == "" {
+		return ""
 	}
-	fmt.Println("   确认使用「长连接」接收事件；权限或事件变更后，创建新版本并发布。")
+	var b strings.Builder
+	b.WriteString("🔐 权限与事件配置：\n")
+	b.WriteString(fmt.Sprintf("   后台快捷添加链接: %s\n", g.PermissionAuthURL))
+	b.WriteString(fmt.Sprintf("   权限后台: %s\n", g.PermissionConsoleURL))
+	b.WriteString(fmt.Sprintf("   事件订阅: %s\n", g.EventConsoleURL))
+	b.WriteString("   需要的权限 scopes:\n")
+	for _, scope := range g.Scopes {
+		b.WriteString(fmt.Sprintf("     - %s\n", scope))
+	}
+	b.WriteString("   需要的事件:\n")
+	for _, event := range g.Events {
+		b.WriteString(fmt.Sprintf("     - %s\n", event))
+	}
+	b.WriteString("   确认使用「长连接」接收事件；权限或事件变更后，创建新版本并发布。\n")
+	b.WriteString("\n")
+	b.WriteString("下一步：请直接打开下面的权限确认直达链接完成配置。setup 已尝试自动打开该页面；如果浏览器没有弹出，请复制这个链接打开：\n")
+	b.WriteString(g.ScopeApplyURL)
+	b.WriteString("\n")
+	return b.String()
+}
+
+func printFeishuPermissionGuidance(platformType, appID string) feishuPermissionGuidance {
+	guidance := buildFeishuPermissionGuidance(platformType, appID)
+	if text := guidance.String(); text != "" {
+		fmt.Print(text)
+	}
+	return guidance
+}
+
+func printFeishuSetupPermissionFinalStep(guidance feishuPermissionGuidance) {
+	if guidance.ScopeApplyURL == "" {
+		return
+	}
 	fmt.Println()
+	if err := openBrowserURL(guidance.ScopeApplyURL); err != nil {
+		fmt.Printf("未能自动打开权限确认页面：%v\n", err)
+	} else {
+		fmt.Println("已尝试自动打开权限确认页面。")
+	}
+	fmt.Print(guidance.String())
 }
 
 func applyFeishuPermissionRequest(ctx context.Context, baseURL, appID, appSecret string, client *http.Client) (*feishuPermissionApplyResult, error) {
@@ -631,10 +706,16 @@ Options:
   --timeout <seconds>         QR onboarding timeout (default: 600)
   --qr-image <path>           Save QR code as PNG image file (e.g. --qr-image qr.png)
   --set-allow-from-empty      Merge owner open_id into allow_from when available (default: false)
+  --no-start                  Write config only; do not install/start the daemon
+  --daemon-env-path <path>    PATH for the auto-started daemon (default: current PATH)
   --debug                     Print onboarding debug logs
 
 Examples:
-  # Recommended: one command for both flows
+  # Recommended top-level command
+  agentchat setup feishu
+  agentchat setup feishu --app cli_xxx:sec_xxx
+
+  # Compatibility command group: same setup flow
   agentchat feishu setup
   agentchat feishu setup --app cli_xxx:sec_xxx
   agentchat feishu setup --project my-project
@@ -720,6 +801,38 @@ func defaultFeishuSetupWorkDir(project string) string {
 		dir = abs
 	}
 	return filepath.Join(dir, defaultFeishuProject)
+}
+
+func feishuSetupDaemonWorkDir() string {
+	dir := filepath.Dir(config.ConfigPath)
+	if abs, err := filepath.Abs(dir); err == nil {
+		return abs
+	}
+	return dir
+}
+
+func installFeishuSetupDaemon(envPath string) (*daemonInstallResult, error) {
+	return installDaemonService(daemon.Config{
+		WorkDir: feishuSetupDaemonWorkDir(),
+		EnvPATH: strings.TrimSpace(envPath),
+	}, true)
+}
+
+func openURL(rawURL string) error {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil
+	}
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", rawURL)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
+	default:
+		cmd = exec.Command("xdg-open", rawURL)
+	}
+	return cmd.Start()
 }
 
 func normalizeFeishuPlatformType(raw string) (string, error) {

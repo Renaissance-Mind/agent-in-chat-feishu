@@ -79,6 +79,9 @@ func main() {
 		case "daemon":
 			runDaemon(os.Args[2:])
 			return
+		case "setup":
+			runSetup(os.Args[2:])
+			return
 		case "feishu":
 			runFeishu(os.Args[2:])
 			return
@@ -1223,7 +1226,10 @@ Commands:
     remove           Remove a provider (--project, --name)
     import           Import providers from cc-switch
 
-  feishu             Setup Feishu/Lark bot credentials
+  setup              Guided setup entrypoints
+    feishu           Configure Feishu/Lark with Codex by default, then start daemon
+
+  feishu             Feishu/Lark compatibility command group
     setup            Smart setup (QR create or bind when --app is provided)
     new              Force QR onboarding to create a new bot
     bind             Bind existing app_id/app_secret
@@ -1245,7 +1251,8 @@ Examples:
   agentchat daemon logs -f           Follow daemon logs
   agentchat send -m "hello"          Send a message to the active session
   agentchat cron list                List all scheduled tasks
-  agentchat feishu setup             Setup Feishu/Lark bot credentials
+  agentchat setup feishu             Setup Feishu/Lark bot credentials
+  agentchat feishu setup             Same Feishu setup flow, kept for compatibility
   agentchat update                   Update to the latest version
   agentchat config format            Format the config file
   agentchat config example > c.toml  Save example config to a file

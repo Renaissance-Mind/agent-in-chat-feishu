@@ -76,38 +76,36 @@ make build
 Create or connect a Feishu/Lark bot and write the project config:
 
 ```bash
-agentchat feishu setup
+agentchat setup feishu
 ```
 
 Connect an existing app:
 
 ```bash
-agentchat feishu setup --app cli_xxx:sec_xxx
+agentchat setup feishu --app cli_xxx:sec_xxx
 ```
 
-Then run the bridge:
+`agentchat setup feishu` is the recommended path. It uses Codex as the default agent. Without `--project`, it creates the local bot profile `feishu` and sets its initial work directory to `~/.agentchat/feishu/` next to the config file. That directory is only the starting workspace; you can switch to the real code repository later from chat with `/dir` or `/workspace`. The command writes the platform config, installs/starts the background service, opens the permission confirmation page when possible, and prints the direct permission confirmation link as the final step. QR onboarding usually creates the bot app with core capabilities; when binding an existing app, open the final `scope-apply` permission confirmation link, verify long-connection events, then publish a new app version if Feishu asks for one. You can reprint the links later with `agentchat feishu permissions`, or request tenant approval through the official API with `agentchat feishu permissions --apply`.
 
-```bash
-agentchat
-```
-
-`setup` is the default path. Without `--project`, it creates the local bot profile `feishu` and sets its initial work directory to `~/.agentchat/feishu/` next to the config file. That directory is only the starting workspace; you can switch to the real code repository later from chat with `/dir` or `/workspace`. The command writes the platform config and prints direct permission/event links for the app. QR onboarding usually creates the bot app with core capabilities; when binding an existing app, open the printed `scope-apply` permission confirmation link, verify long-connection events, then publish a new app version if Feishu asks for one. You can reprint the links later with `agentchat feishu permissions`, or request tenant approval through the official API with `agentchat feishu permissions --apply`.
+`agentchat feishu setup` remains supported as a compatibility alias.
 
 New projects default to chat binding. If `admin_from` is set, the first valid trigger from an admin automatically binds that group or DM and persists its `chat_id`; without an admin match, the bot replies with the `chat_id` to add to `allow_group_chats` or `allow_private_chats`.
 
-For background service mode:
+Use `--no-start` to write config without starting the service:
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat
+agentchat setup feishu --no-start
 ```
 
-Daemon install captures the current `PATH`, matching cc-connect behavior. If you
-install from a non-interactive shell or use a custom path manager for the agent
-CLI, Node.js, or `lark-cli`, pass the service PATH explicitly:
+Background service management:
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+agentchat daemon status
+agentchat daemon logs -f
+agentchat daemon restart
 ```
+
+Automatic daemon setup captures the current `PATH`, matching cc-connect behavior. If you install from a non-interactive shell or use a custom path manager for the agent CLI, Node.js, or `lark-cli`, pass the service PATH explicitly with `agentchat setup feishu --daemon-env-path "$PATH"`.
 
 ## Configuration
 

@@ -76,36 +76,39 @@ make build
 新建或连接飞书/Lark 机器人，并写入项目配置：
 
 ```bash
-agentchat feishu setup
+agentchat setup feishu
 ```
 
 关联已有应用：
 
 ```bash
-agentchat feishu setup --app cli_xxx:sec_xxx
+agentchat setup feishu --app cli_xxx:sec_xxx
 ```
 
-然后启动：
+推荐使用 `agentchat setup feishu`，默认连接 Codex。不传 `--project` 时，它会创建本地机器人配置 `feishu`，并把默认工作目录设为配置同级的 `~/.agentchat/feishu/`；这个目录只是初始工作区，之后可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。命令会写入平台配置，默认安装/启动后台服务，尽量自动打开权限确认页面，并把权限确认直达链接作为最后一步打印出来；setup 成功后 `agentchat` 已在后台运行。扫码新建通常会创建机器人应用并预配核心能力；关联已有应用时，打开最后打印的 `scope-apply` 权限确认直达链接，再核验长连接事件订阅。如果飞书提示需要发布新版本，补权限或事件后要创建版本并发布。之后也可以用 `agentchat feishu permissions` 重新打印这些链接，或用 `agentchat feishu permissions --apply` 通过官方接口向租户管理员发起权限申请。
 
-```bash
-agentchat
-```
-
-默认使用 `setup`。不传 `--project` 时，它会创建本地机器人配置 `feishu`，并把默认工作目录设为配置同级的 `~/.agentchat/feishu/`；这个目录只是初始工作区，之后可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。命令会写入平台配置，并打印该应用的权限和事件直达链接。扫码新建通常会创建机器人应用并预配核心能力；关联已有应用时，打开终端打印的 `scope-apply` 权限确认直达链接，再核验长连接事件订阅。如果飞书提示需要发布新版本，补权限或事件后要创建版本并发布。之后也可以用 `agentchat feishu permissions` 重新打印这些链接，或用 `agentchat feishu permissions --apply` 通过官方接口向租户管理员发起权限申请。
+`agentchat feishu setup` 仍作为兼容写法保留。
 
 新项目默认使用聊天绑定。如果已设置 `admin_from`，管理员第一次在群聊或私聊中有效触发机器人时会自动绑定该会话并持久化 `chat_id`；如果不是管理员触发，机器人会返回需要加入 `allow_group_chats` 或 `allow_private_chats` 的 `chat_id`。
 
-后台服务模式：
+`--no-start` 可只写配置不启动服务：
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat
+agentchat setup feishu --no-start
 ```
 
-daemon 安装会记录当前 `PATH`，与 cc-connect 行为一致。如果你从非交互 shell
-安装，或本地 Agent CLI、Node.js、`lark-cli` 来自自定义路径管理器，可以显式传入服务 PATH：
+后台服务管理：
 
 ```bash
-agentchat daemon install --work-dir ~/.agentchat --env-path "$PATH"
+agentchat daemon status
+agentchat daemon logs -f
+agentchat daemon restart
+```
+
+setup 自动安装 daemon 时会记录当前 `PATH`，与 cc-connect 行为一致。如果你从非交互 shell 安装，或本地 Agent CLI、Node.js、`lark-cli` 来自自定义路径管理器，可以显式传入服务 PATH：
+
+```bash
+agentchat setup feishu --daemon-env-path "$PATH"
 ```
 
 ## 配置
