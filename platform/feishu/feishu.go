@@ -127,6 +127,7 @@ type groupHistoryCache struct {
 	lastCreateMS int64
 	entries      []groupHistoryEntry
 	seen         map[string]struct{}
+	delivered    map[string]struct{}
 }
 
 type Platform struct {
@@ -945,12 +946,13 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		quotedPrefix = p.fetchQuotedMessage(ctx, parentID)
 	}
 	historyPrefix := ""
+	var markContextDelivered func()
 	if includeGroupHistory {
 		if err := p.syncGroupHistory(ctx, chatID); err != nil {
 			p.logPermissionHint(ctx, "group history", err)
 			slog.Warn(p.tag()+": group history sync failed", "chat_id", chatID, "error", err)
 		}
-		historyPrefix = p.renderGroupHistoryContext(chatID, messageID)
+		historyPrefix, markContextDelivered = p.renderGroupHistoryContext(chatID, messageID)
 	}
 	extraPrefix := joinExtraPrefixes(historyPrefix, quotedPrefix)
 
@@ -976,7 +978,10 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
-			Content: text, ExtraContent: extraPrefix, ReplyCtx: rctx,
+			Content:              text,
+			ExtraContent:         extraPrefix,
+			MarkContextDelivered: markContextDelivered,
+			ReplyCtx:             rctx,
 		})
 
 	case "image":
@@ -996,8 +1001,10 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
-			Images:   []core.ImageAttachment{{MimeType: mimeType, Data: imgData}},
-			ReplyCtx: rctx,
+			ExtraContent:         extraPrefix,
+			MarkContextDelivered: markContextDelivered,
+			Images:               []core.ImageAttachment{{MimeType: mimeType, Data: imgData}},
+			ReplyCtx:             rctx,
 		})
 
 	case "audio":
@@ -1019,6 +1026,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
+			ExtraContent:         extraPrefix,
+			MarkContextDelivered: markContextDelivered,
 			Audio: &core.AudioAttachment{
 				MimeType: "audio/opus",
 				Data:     audioData,
@@ -1038,8 +1047,11 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
-			Content: text, ExtraContent: extraPrefix, Images: images,
-			ReplyCtx: rctx,
+			Content:              text,
+			ExtraContent:         extraPrefix,
+			MarkContextDelivered: markContextDelivered,
+			Images:               images,
+			ReplyCtx:             rctx,
 		})
 
 	case "file":
@@ -1063,6 +1075,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
+			ExtraContent:         extraPrefix,
+			MarkContextDelivered: markContextDelivered,
 			Files: []core.FileAttachment{{
 				MimeType: mimeType,
 				Data:     fileData,
@@ -1081,10 +1095,12 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
-			Content:  text,
-			Images:   images,
-			Files:    files,
-			ReplyCtx: rctx,
+			Content:              text,
+			ExtraContent:         extraPrefix,
+			MarkContextDelivered: markContextDelivered,
+			Images:               images,
+			Files:                files,
+			ReplyCtx:             rctx,
 		}
 		p.handler(p.dispatchPlatform(), coreMsg)
 
@@ -3196,6 +3212,9 @@ func (p *Platform) mergeGroupHistory(chatID string, incoming []groupHistoryEntry
 			cache.seen[groupHistoryEntryKey(entry)] = struct{}{}
 		}
 	}
+	if cache.delivered == nil {
+		cache.delivered = make(map[string]struct{})
+	}
 	for _, entry := range incoming {
 		entry.Content = compactGroupHistoryText(entry.Content)
 		if entry.Content == "" {
@@ -3213,27 +3232,50 @@ func (p *Platform) mergeGroupHistory(chatID string, incoming []groupHistoryEntry
 	}
 	cache.entries = pruneGroupHistoryEntries(cache.entries, maxMessages, maxAge)
 	cache.seen = make(map[string]struct{}, len(cache.entries))
+	nextDelivered := make(map[string]struct{}, len(cache.delivered))
 	for _, entry := range cache.entries {
-		cache.seen[groupHistoryEntryKey(entry)] = struct{}{}
+		key := groupHistoryEntryKey(entry)
+		cache.seen[key] = struct{}{}
+		if _, ok := cache.delivered[key]; ok {
+			nextDelivered[key] = struct{}{}
+		}
 	}
+	cache.delivered = nextDelivered
 }
 
-func (p *Platform) renderGroupHistoryContext(chatID, currentMessageID string) string {
+func (p *Platform) renderGroupHistoryContext(chatID, currentMessageID string) (string, func()) {
 	p.groupHistoryMu.Lock()
 	cache := p.groupHistoryByChat[chatID]
 	if cache == nil || len(cache.entries) == 0 {
 		p.groupHistoryMu.Unlock()
-		return ""
+		return "", nil
+	}
+	if cache.delivered == nil {
+		cache.delivered = make(map[string]struct{})
 	}
 	entries := append([]groupHistoryEntry(nil), cache.entries...)
+	delivered := make(map[string]struct{}, len(cache.delivered))
+	for key := range cache.delivered {
+		delivered[key] = struct{}{}
+	}
 	p.groupHistoryMu.Unlock()
 
 	lines := []string{
 		"[Feishu group history]",
 		"Recent group messages fetched at trigger time. Use them as background and answer the current trigger.",
 	}
+	var deliveredKeys []string
 	for _, entry := range entries {
+		key := groupHistoryEntryKey(entry)
 		if entry.MessageID != "" && entry.MessageID == currentMessageID {
+			deliveredKeys = append(deliveredKeys, key)
+			continue
+		}
+		if p.isOwnGroupHistoryAppEntry(entry) {
+			deliveredKeys = append(deliveredKeys, key)
+			continue
+		}
+		if _, ok := delivered[key]; ok {
 			continue
 		}
 		content := compactGroupHistoryText(entry.Content)
@@ -3245,11 +3287,47 @@ func (p *Platform) renderGroupHistoryContext(chatID, currentMessageID string) st
 			name = "Unknown"
 		}
 		lines = append(lines, fmt.Sprintf("[%s %s] %s", entry.CreatedAt.Local().Format("15:04"), name, content))
+		deliveredKeys = append(deliveredKeys, key)
 	}
+	markDelivered := p.groupHistoryDeliveredMarker(chatID, deliveredKeys)
 	if len(lines) == 2 {
-		return ""
+		return "", markDelivered
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), markDelivered
+}
+
+func (p *Platform) groupHistoryDeliveredMarker(chatID string, keys []string) func() {
+	if chatID == "" || len(keys) == 0 {
+		return nil
+	}
+	keys = append([]string(nil), keys...)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			p.groupHistoryMu.Lock()
+			defer p.groupHistoryMu.Unlock()
+			cache := p.groupHistoryByChat[chatID]
+			if cache == nil {
+				return
+			}
+			if cache.delivered == nil {
+				cache.delivered = make(map[string]struct{})
+			}
+			for _, key := range keys {
+				cache.delivered[key] = struct{}{}
+			}
+		})
+	}
+}
+
+func (p *Platform) isOwnGroupHistoryAppEntry(entry groupHistoryEntry) bool {
+	if entry.SenderType != "app" || entry.SenderID == "" {
+		return false
+	}
+	if p.appID != "" && entry.SenderID == p.appID {
+		return true
+	}
+	return p.botOpenID != "" && entry.SenderID == p.botOpenID
 }
 
 func pruneGroupHistoryEntries(entries []groupHistoryEntry, maxMessages int, maxAge time.Duration) []groupHistoryEntry {

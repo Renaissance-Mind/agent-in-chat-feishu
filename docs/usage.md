@@ -150,7 +150,7 @@ context_buffer_max_messages = 100
 context_buffer_max_age_mins = 0
 ```
 
-When the bot is mentioned in a Feishu group, recent group history is fetched, filtered, cached, and injected as background context. Interactive progress cards are skipped by default, while readable final reply cards are kept.
+When the bot is mentioned in a Feishu group, recent group history is fetched, filtered, cached, and injected as background context. The first mention provides recent background; later mentions in the same running session inject only newly delivered group messages, so history already sent to Codex is not repeated in the next turn. Interactive progress cards are skipped by default, while readable final reply cards are kept.
 
 ## Identity Cache
 

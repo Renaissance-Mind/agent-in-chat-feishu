@@ -254,16 +254,17 @@ type workspaceInitFlow struct {
 // The message is NOT sent to agent stdin at queue time; the event loop
 // sends it after the current turn completes to avoid mid-turn interference.
 type queuedMessage struct {
-	platform      Platform
-	replyCtx      any
-	content       string
-	images        []ImageAttachment
-	files         []FileAttachment
-	fromVoice     bool
-	userID        string
-	userName      string // sender's display name for sender injection
-	msgPlatform   string // platform name for sender injection
-	msgSessionKey string // session key for extracting chat ID
+	platform             Platform
+	replyCtx             any
+	content              string
+	images               []ImageAttachment
+	files                []FileAttachment
+	fromVoice            bool
+	userID               string
+	userName             string // sender's display name for sender injection
+	msgPlatform          string // platform name for sender injection
+	msgSessionKey        string // session key for extracting chat ID
+	markContextDelivered func()
 }
 
 // interactiveState tracks a running interactive agent session and its permission state.
@@ -1749,16 +1750,17 @@ func (e *Engine) queueMessageForBusySession(p Platform, msg *Message, interactiv
 		return false // fall back to "previous processing" reply
 	}
 	state.pendingMessages = append(state.pendingMessages, queuedMessage{
-		platform:      p,
-		replyCtx:      msg.ReplyCtx,
-		content:       msg.Content,
-		images:        msg.Images,
-		files:         msg.Files,
-		fromVoice:     msg.FromVoice,
-		userID:        msg.UserID,
-		userName:      msg.UserName,
-		msgPlatform:   msg.Platform,
-		msgSessionKey: msg.SessionKey,
+		platform:             p,
+		replyCtx:             msg.ReplyCtx,
+		content:              msg.Content,
+		images:               msg.Images,
+		files:                msg.Files,
+		fromVoice:            msg.FromVoice,
+		userID:               msg.UserID,
+		userName:             msg.UserName,
+		msgPlatform:          msg.Platform,
+		msgSessionKey:        msg.SessionKey,
+		markContextDelivered: msg.MarkContextDelivered,
 	})
 	queueDepth := len(state.pendingMessages)
 	state.mu.Unlock()
@@ -2179,7 +2181,11 @@ func (e *Engine) processInteractiveMessageWith(p Platform, msg *Message, session
 	// EventPermissionRequest while blocked — the event loop must run in parallel.
 	sendDone := make(chan error, 1)
 	go func() {
-		sendDone <- state.agentSession.Send(promptContent, msg.Images, msg.Files)
+		err := state.agentSession.Send(promptContent, msg.Images, msg.Files)
+		if err == nil && msg.MarkContextDelivered != nil {
+			msg.MarkContextDelivered()
+		}
+		sendDone <- err
 	}()
 
 	e.processInteractiveEvents(state, session, sessions, interactiveKey, msg.MessageID, turnStart, stopTyping, sendDone, msg.ReplyCtx)
@@ -3233,7 +3239,11 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 
 				nextSend := make(chan error, 1)
 				go func() {
-					nextSend <- state.agentSession.Send(queuedPrompt, queued.images, queued.files)
+					err := state.agentSession.Send(queuedPrompt, queued.images, queued.files)
+					if err == nil && queued.markContextDelivered != nil {
+						queued.markContextDelivered()
+					}
+					nextSend <- err
 				}()
 				pendingSend = nextSend
 
@@ -3405,7 +3415,11 @@ func (e *Engine) drainPendingMessages(state *interactiveState, session *Session,
 
 		sendDone := make(chan error, 1)
 		go func() {
-			sendDone <- state.agentSession.Send(prompt, queued.images, queued.files)
+			err := state.agentSession.Send(prompt, queued.images, queued.files)
+			if err == nil && queued.markContextDelivered != nil {
+				queued.markContextDelivered()
+			}
+			sendDone <- err
 		}()
 
 		var stopTyping func()

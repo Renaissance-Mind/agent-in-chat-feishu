@@ -157,6 +157,8 @@ reaction_emoji = "OnIt"
 
 The default config and runtime data directory is `~/.agentchat`. See [config.example.toml](config.example.toml) for a fuller Feishu-only example.
 
+With `group_context_buffer = true`, Feishu group history is cached per chat. The first mention gives the agent recent background; later mentions in the same running session inject only newly delivered group messages, so previously sent context is not repeated in the Codex conversation.
+
 ## Feishu Permissions
 
 For a full bot that behaves like the current runtime, enable robot capability, long-connection event delivery, and these permissions/events:

@@ -1075,6 +1075,102 @@ func TestFeishu_GroupContextBufferUsesHistoryOnTrigger(t *testing.T) {
 	}
 }
 
+func TestFeishu_GroupContextBufferOnlyAddsNewHistoryAfterDelivery(t *testing.T) {
+	p, err := newPlatform("feishu", lark.FeishuBaseUrl, map[string]any{
+		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
+		"share_session_in_channel":    true,
+		"group_context_buffer":        true,
+		"context_buffer_max_messages": 100,
+		"context_buffer_max_age_mins": 0,
+	})
+	if err != nil {
+		t.Fatalf("newPlatform(feishu) error = %v", err)
+	}
+	ip := p.(*interactivePlatform)
+	ip.botOpenID = "ou_bot"
+	ip.userNameCache.Store("ou_alice", "Alice")
+	ip.userNameCache.Store("ou_bob", "Bob")
+	ip.userNameCache.Store("ou_cara", "Cara")
+	ip.chatNameCache.Store("oc_group", "Group")
+	baseTime := time.Date(2026, 6, 9, 1, 18, 0, 0, time.Local)
+	fetchCount := 0
+	ip.groupHistoryFetch = func(_ context.Context, chatID string, _ int64, _ int64, _ int) ([]groupHistoryEntry, error) {
+		if chatID != "oc_group" {
+			t.Fatalf("history chatID = %q, want oc_group", chatID)
+		}
+		fetchCount++
+		entries := []groupHistoryEntry{
+			{MessageID: "om_a", SenderID: "ou_alice", SenderName: "Alice", SenderType: "user", CreatedAt: baseTime, Content: "A"},
+			{MessageID: "om_b", SenderID: "ou_bob", SenderName: "Bob", SenderType: "user", CreatedAt: baseTime.Add(time.Minute), Content: "B"},
+			{MessageID: "om_c", SenderID: "ou_cara", SenderName: "Cara", SenderType: "user", CreatedAt: baseTime.Add(2 * time.Minute), Content: "C"},
+			{MessageID: "om_trigger_1", SenderID: "ou_bob", SenderName: "Bob", SenderType: "user", CreatedAt: baseTime.Add(3 * time.Minute), Content: "第一次问题"},
+		}
+		if fetchCount == 1 {
+			return entries, nil
+		}
+		return append(entries,
+			groupHistoryEntry{MessageID: "om_own_reply", SenderID: "cli_xxx", SenderName: "agentchat", SenderType: "app", CreatedAt: baseTime.Add(4 * time.Minute), Content: "第一次回复"},
+			groupHistoryEntry{MessageID: "om_d", SenderID: "ou_alice", SenderName: "Alice", SenderType: "user", CreatedAt: baseTime.Add(5 * time.Minute), Content: "D"},
+			groupHistoryEntry{MessageID: "om_e", SenderID: "ou_bob", SenderName: "Bob", SenderType: "user", CreatedAt: baseTime.Add(6 * time.Minute), Content: "E"},
+			groupHistoryEntry{MessageID: "om_trigger_2", SenderID: "ou_cara", SenderName: "Cara", SenderType: "user", CreatedAt: baseTime.Add(7 * time.Minute), Content: "第二次问题"},
+		), nil
+	}
+
+	msgCh := make(chan *core.Message, 2)
+	ip.handler = func(_ core.Platform, msg *core.Message) {
+		msgCh <- msg
+	}
+	mention := []*larkim.MentionEvent{{
+		Key: stringPtr("@bot"),
+		Id:  &larkim.UserId{OpenId: stringPtr("ou_bot")},
+	}}
+
+	_ = ip.onMessage(context.Background(), feishuTextEvent("om_trigger_1", "oc_group", "ou_bob", "group", `{"text":"@bot 第一次问题"}`, mention))
+	var first *core.Message
+	select {
+	case first = <-msgCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected first mention message to be handled")
+	}
+	if first.MarkContextDelivered == nil {
+		t.Fatal("first MarkContextDelivered = nil")
+	}
+	if !strings.Contains(first.ExtraContent, "[01:18 Alice] A") ||
+		!strings.Contains(first.ExtraContent, "[01:19 Bob] B") ||
+		!strings.Contains(first.ExtraContent, "[01:20 Cara] C") {
+		t.Fatalf("first ExtraContent missing initial context: %q", first.ExtraContent)
+	}
+	if strings.Contains(first.ExtraContent, "第一次问题") {
+		t.Fatalf("first ExtraContent should not duplicate current trigger: %q", first.ExtraContent)
+	}
+	first.MarkContextDelivered()
+
+	_ = ip.onMessage(context.Background(), feishuTextEvent("om_trigger_2", "oc_group", "ou_cara", "group", `{"text":"@bot 第二次问题"}`, mention))
+	var second *core.Message
+	select {
+	case second = <-msgCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected second mention message to be handled")
+	}
+	if second.MarkContextDelivered == nil {
+		t.Fatal("second MarkContextDelivered = nil")
+	}
+	if strings.Contains(second.ExtraContent, "] A") ||
+		strings.Contains(second.ExtraContent, "] B") ||
+		strings.Contains(second.ExtraContent, "] C") ||
+		strings.Contains(second.ExtraContent, "第一次问题") ||
+		strings.Contains(second.ExtraContent, "第一次回复") {
+		t.Fatalf("second ExtraContent repeated already-delivered history: %q", second.ExtraContent)
+	}
+	if !strings.Contains(second.ExtraContent, "[01:23 Alice] D") ||
+		!strings.Contains(second.ExtraContent, "[01:24 Bob] E") {
+		t.Fatalf("second ExtraContent missing new context: %q", second.ExtraContent)
+	}
+	if strings.Contains(second.ExtraContent, "第二次问题") {
+		t.Fatalf("second ExtraContent should not duplicate current trigger: %q", second.ExtraContent)
+	}
+}
+
 func TestFeishu_GroupHistoryEntryFiltersCardsAndIncludesAppText(t *testing.T) {
 	p := &Platform{platformName: "feishu", appID: "cli_self"}
 	p.userNameCache.Store("ou_alice", "Alice")
