@@ -43,6 +43,7 @@ config.toml
 .agentchat/
 
 # Local assistant/tooling state
+AGENTS.md
 .claude/settings.local.json
 
 # npm / pnpm (for npm package distribution and web admin)
