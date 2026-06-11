@@ -122,30 +122,7 @@ func (ks *kimiSession) Send(prompt string, images []core.ImageAttachment, files 
 		fullPrompt += "\n\n[Attached files saved at: " + strings.Join(fileRefs, ", ") + "]"
 	}
 
-	args := []string{
-		"--print",
-		"--output-format", "stream-json",
-	}
-
-	switch ks.mode {
-	case "plan":
-		args = append(args, "--plan")
-	case "quiet":
-		args = append(args, "--quiet")
-	}
-
-	sid := ks.CurrentSessionID()
-	if sid != "" {
-		args = append(args, "--resume", sid)
-	}
-	if ks.model != "" {
-		args = append(args, "--model", ks.model)
-	}
-	if ks.workDir != "" {
-		args = append(args, "--work-dir", ks.workDir)
-	}
-
-	args = append(args, "--prompt", fullPrompt)
+	args := ks.buildArgs(fullPrompt)
 
 	var cancel context.CancelFunc
 	var ctx context.Context
@@ -162,7 +139,7 @@ func (ks *kimiSession) Send(prompt string, images []core.ImageAttachment, files 
 		}
 	}()
 
-	slog.Debug("kimiSession: launching", "resume", sid != "", "args", core.RedactArgs(args))
+	slog.Debug("kimiSession: launching", "resume", ks.CurrentSessionID() != "", "args", core.RedactArgs(args))
 	cmd := exec.CommandContext(ctx, ks.cmd, args...)
 	cmd.WaitDelay = 1 * time.Second
 	cmd.Dir = ks.workDir
@@ -177,8 +154,10 @@ func (ks *kimiSession) Send(prompt string, images []core.ImageAttachment, files 
 		return fmt.Errorf("kimiSession: stdout pipe: %w", err)
 	}
 
-	var stderrBuf bytes.Buffer
-	cmd.Stderr = &stderrBuf
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("kimiSession: stderr pipe: %w", err)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("kimiSession: start: %w", err)
@@ -188,13 +167,43 @@ func (ks *kimiSession) Send(prompt string, images []core.ImageAttachment, files 
 	ks.wg.Add(1)
 	go func() {
 		defer cancel()
-		ks.readLoop(ctx, cmd, stdout, &stderrBuf, append(imageRefs, fileRefs...))
+		ks.readLoop(ctx, cmd, stdout, stderr, append(imageRefs, fileRefs...))
 	}()
 
 	return nil
 }
 
-func (ks *kimiSession) readLoop(ctx context.Context, cmd *exec.Cmd, stdout io.ReadCloser, stderrBuf *bytes.Buffer, tempFiles []string) {
+func (ks *kimiSession) buildArgs(fullPrompt string) []string {
+	args := []string{
+		"--print",
+		"--output-format", "stream-json",
+	}
+
+	switch ks.mode {
+	case "plan":
+		args = append(args, "--plan")
+	case "quiet":
+		// Kimi CLI 1.47 rejects --quiet with stream-json output. agentchat
+		// needs stream-json to parse events, so quiet mode is handled by the
+		// bridge rather than passing the incompatible CLI flag.
+	}
+
+	sid := ks.CurrentSessionID()
+	if sid != "" {
+		args = append(args, "--resume", sid)
+	}
+	if ks.model != "" {
+		args = append(args, "--model", ks.model)
+	}
+	if ks.workDir != "" {
+		args = append(args, "--work-dir", ks.workDir)
+	}
+
+	args = append(args, "--prompt", fullPrompt)
+	return args
+}
+
+func (ks *kimiSession) readLoop(ctx context.Context, cmd *exec.Cmd, stdout io.ReadCloser, stderr io.ReadCloser, tempFiles []string) {
 	defer ks.wg.Done()
 	defer func() {
 		for _, f := range tempFiles {
@@ -205,6 +214,28 @@ func (ks *kimiSession) readLoop(ctx context.Context, cmd *exec.Cmd, stdout io.Re
 	go func() {
 		<-ctx.Done()
 		stdout.Close()
+	}()
+
+	var stderrBuf bytes.Buffer
+	stderrDone := make(chan struct{})
+	go func() {
+		defer close(stderrDone)
+		scanner := bufio.NewScanner(stderr)
+		scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				continue
+			}
+			if ks.captureResumeSessionID(line) {
+				continue
+			}
+			stderrBuf.WriteString(line)
+			stderrBuf.WriteByte('\n')
+		}
+		if err := scanner.Err(); err != nil {
+			stderrBuf.WriteString(fmt.Sprintf("read stderr: %v\n", err))
+		}
 	}()
 
 	scanner := bufio.NewScanner(stdout)
@@ -219,12 +250,7 @@ func (ks *kimiSession) readLoop(ctx context.Context, cmd *exec.Cmd, stdout io.Re
 
 		slog.Debug("kimiSession: raw", "line", truncate(line, 500))
 
-		// Kimi prints a non-JSON line at the end: "To resume this session: kimi -r <id>"
-		if strings.HasPrefix(line, "To resume this session:") {
-			if id := extractResumeSessionID(line); id != "" {
-				ks.sessionID.Store(id)
-				slog.Debug("kimiSession: session id updated", "session_id", id)
-			}
+		if ks.captureResumeSessionID(line) {
 			continue
 		}
 
@@ -241,6 +267,7 @@ func (ks *kimiSession) readLoop(ctx context.Context, cmd *exec.Cmd, stdout io.Re
 	// Wait for process exit before sending any terminal event so the engine
 	// never sees EventError after EventResult from the same turn.
 	waitErr := cmd.Wait()
+	<-stderrDone
 
 	if scanErr != nil {
 		slog.Error("kimiSession: scanner error", "error", scanErr)
@@ -273,6 +300,17 @@ func (ks *kimiSession) readLoop(ctx context.Context, cmd *exec.Cmd, stdout io.Re
 	case ks.events <- evt:
 	case <-ks.ctx.Done():
 	}
+}
+
+func (ks *kimiSession) captureResumeSessionID(line string) bool {
+	if !strings.HasPrefix(line, "To resume this session:") {
+		return false
+	}
+	if id := extractResumeSessionID(line); id != "" {
+		ks.sessionID.Store(id)
+		slog.Debug("kimiSession: session id updated", "session_id", id)
+	}
+	return true
 }
 
 func extractResumeSessionID(line string) string {

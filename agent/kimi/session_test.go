@@ -39,6 +39,29 @@ func TestExtractResumeSessionID(t *testing.T) {
 	}
 }
 
+func TestCaptureResumeSessionID(t *testing.T) {
+	ctx := context.Background()
+	ks, _ := newKimiSession(ctx, "kimi", "/tmp", "", "default", "", nil, 0)
+	defer ks.Close()
+
+	assert.True(t, ks.captureResumeSessionID("To resume this session: kimi -r e3690555-60eb-4d50-874b-e3647e9cee5b"))
+	assert.Equal(t, "e3690555-60eb-4d50-874b-e3647e9cee5b", ks.CurrentSessionID())
+	assert.False(t, ks.captureResumeSessionID("some warning line"))
+}
+
+func TestBuildArgsQuietKeepsStreamJSON(t *testing.T) {
+	ctx := context.Background()
+	ks, _ := newKimiSession(ctx, "kimi", "/tmp/work", "kimi-k2", "quiet", "resume-123", nil, 0)
+	defer ks.Close()
+
+	args := ks.buildArgs("hello")
+	assert.Contains(t, args, "--output-format")
+	assert.Contains(t, args, "stream-json")
+	assert.Contains(t, args, "--resume")
+	assert.Contains(t, args, "resume-123")
+	assert.NotContains(t, args, "--quiet")
+}
+
 func TestHandleAssistantWithText(t *testing.T) {
 	ctx := context.Background()
 	ks, _ := newKimiSession(ctx, "kimi", "/tmp", "", "default", "", nil, 0)
