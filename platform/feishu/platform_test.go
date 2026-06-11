@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1105,6 +1106,7 @@ func TestFeishu_GroupContextBufferAttachesHistoryFile(t *testing.T) {
 	p, err := newPlatform("feishu", lark.FeishuBaseUrl, map[string]any{
 		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
 		"domain":                      srv.URL,
+		"reaction_emoji":              "none",
 		"share_session_in_channel":    true,
 		"group_context_buffer":        true,
 		"context_buffer_max_messages": 100,
@@ -1181,6 +1183,104 @@ func TestFeishu_GroupContextBufferAttachesHistoryFile(t *testing.T) {
 	}
 }
 
+func TestFeishu_StartsReactionBeforeGroupHistoryFetch(t *testing.T) {
+	var createHits atomic.Int32
+	var deleteHits atomic.Int32
+	var historyStartedBeforeReaction atomic.Bool
+	reactionCreated := make(chan struct{})
+	reactionCreatedOnce := sync.Once{}
+	reactionDeleted := make(chan struct{})
+	reactionDeletedOnce := sync.Once{}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			writeJSON(t, w, map[string]any{
+				"code":                0,
+				"msg":                 "success",
+				"expire":              7200,
+				"tenant_access_token": "valid-token",
+			})
+		case "/open-apis/im/v1/messages/om_trigger/reactions":
+			if r.Method != http.MethodPost {
+				t.Fatalf("reaction create method = %s, want POST", r.Method)
+			}
+			createHits.Add(1)
+			reactionCreatedOnce.Do(func() { close(reactionCreated) })
+			writeJSON(t, w, map[string]any{
+				"code": 0,
+				"msg":  "success",
+				"data": map[string]any{"reaction_id": "reaction_1"},
+			})
+		case "/open-apis/im/v1/messages/om_trigger/reactions/reaction_1":
+			if r.Method != http.MethodDelete {
+				t.Fatalf("reaction delete method = %s, want DELETE", r.Method)
+			}
+			deleteHits.Add(1)
+			reactionDeletedOnce.Do(func() { close(reactionDeleted) })
+			writeJSON(t, w, map[string]any{"code": 0, "msg": "success"})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	p, err := newPlatform("feishu", lark.FeishuBaseUrl, map[string]any{
+		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
+		"domain":                   srv.URL,
+		"share_session_in_channel": true,
+		"group_context_buffer":     true,
+	})
+	if err != nil {
+		t.Fatalf("newPlatform(feishu) error = %v", err)
+	}
+	ip := p.(*interactivePlatform)
+	ip.botOpenID = "ou_bot"
+	ip.userNameCache.Store("ou_user", "User")
+	ip.chatNameCache.Store("oc_group", "Group")
+	ip.groupHistoryFetch = func(_ context.Context, _ string, _ int64, _ int64, _ int) ([]groupHistoryEntry, error) {
+		select {
+		case <-reactionCreated:
+		case <-time.After(2 * time.Second):
+			historyStartedBeforeReaction.Store(true)
+		}
+		return nil, nil
+	}
+
+	msgCh := make(chan *core.Message, 1)
+	ip.handler = func(_ core.Platform, msg *core.Message) {
+		stopTyping := ip.StartTyping(context.Background(), msg.ReplyCtx)
+		stopTyping()
+		msgCh <- msg
+	}
+	mention := []*larkim.MentionEvent{{
+		Key: stringPtr("@bot"),
+		Id:  &larkim.UserId{OpenId: stringPtr("ou_bot")},
+	}}
+	_ = ip.onMessage(context.Background(), feishuTextEvent("om_trigger", "oc_group", "ou_user", "group", `{"text":"@bot 123"}`, mention))
+
+	select {
+	case <-msgCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected mention message to be handled")
+	}
+	if historyStartedBeforeReaction.Load() {
+		t.Fatal("group history fetch started before the early reaction request was observed")
+	}
+	select {
+	case <-reactionDeleted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected StartTyping stop to remove the early reaction")
+	}
+	if createHits.Load() != 1 {
+		t.Fatalf("reaction create hits = %d, want 1", createHits.Load())
+	}
+	if deleteHits.Load() != 1 {
+		t.Fatalf("reaction delete hits = %d, want 1", deleteHits.Load())
+	}
+}
+
 func TestFeishu_QuotedFileMessageIsAttached(t *testing.T) {
 	const fileName = "未达年限报废家具统计.xlsx"
 	fileBytes := []byte("quoted xlsx bytes")
@@ -1230,6 +1330,7 @@ func TestFeishu_QuotedFileMessageIsAttached(t *testing.T) {
 	p, err := newPlatform("feishu", lark.FeishuBaseUrl, map[string]any{
 		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
 		"domain":                   srv.URL,
+		"reaction_emoji":           "none",
 		"share_session_in_channel": true,
 		"group_context_buffer":     false,
 	})

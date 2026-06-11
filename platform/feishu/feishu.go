@@ -107,9 +107,51 @@ func init() {
 }
 
 type replyContext struct {
-	messageID  string
-	chatID     string
-	sessionKey string
+	messageID      string
+	chatID         string
+	sessionKey     string
+	typingReaction *reactionLifecycle
+}
+
+type reactionLifecycle struct {
+	ready     chan struct{}
+	readyOnce sync.Once
+	stopOnce  sync.Once
+	mu        sync.Mutex
+	id        string
+}
+
+func newReactionLifecycle() *reactionLifecycle {
+	return &reactionLifecycle{ready: make(chan struct{})}
+}
+
+func (r *reactionLifecycle) complete(id string) {
+	if r == nil {
+		return
+	}
+	r.readyOnce.Do(func() {
+		r.mu.Lock()
+		r.id = id
+		r.mu.Unlock()
+		close(r.ready)
+	})
+}
+
+func (r *reactionLifecycle) stop(remove func(string)) {
+	if r == nil {
+		return
+	}
+	r.stopOnce.Do(func() {
+		go func() {
+			<-r.ready
+			r.mu.Lock()
+			id := r.id
+			r.mu.Unlock()
+			if id != "" {
+				remove(id)
+			}
+		}()
+	})
 }
 
 type groupHistoryFetchFunc func(ctx context.Context, chatID string, sinceMS, untilMS int64, pageSize int) ([]groupHistoryEntry, error)
@@ -790,12 +832,43 @@ func (p *Platform) removeReaction(messageID, reactionID string) {
 	}
 }
 
+func (p *Platform) startTypingReactionEarly(rctx replyContext) replyContext {
+	if rctx.messageID == "" || p.reactionEmoji == "" {
+		return rctx
+	}
+	if rctx.typingReaction != nil {
+		return rctx
+	}
+	lifecycle := newReactionLifecycle()
+	rctx.typingReaction = lifecycle
+	messageID := rctx.messageID
+	go func() {
+		lifecycle.complete(p.addReaction(messageID))
+	}()
+	return rctx
+}
+
+func (p *Platform) stopTypingReaction(rctx replyContext) {
+	if rctx.typingReaction == nil {
+		return
+	}
+	messageID := rctx.messageID
+	rctx.typingReaction.stop(func(reactionID string) {
+		p.removeReaction(messageID, reactionID)
+	})
+}
+
 // StartTyping adds an emoji reaction to the user's message and returns a stop
 // function that removes the reaction when processing is complete.
 func (p *Platform) StartTyping(ctx context.Context, rctx any) (stop func()) {
 	rc, ok := rctx.(replyContext)
 	if !ok || rc.messageID == "" {
 		return func() {}
+	}
+	if rc.typingReaction != nil {
+		return func() {
+			p.stopTypingReaction(rc)
+		}
 	}
 	reactionID := p.addReaction(rc.messageID)
 	return func() {
@@ -911,6 +984,7 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 		slog.Debug(p.tag()+": message content is nil", "message_id", messageID, "type", msgType)
 		return nil
 	}
+	rctx = p.startTypingReactionEarly(rctx)
 
 	// Capture content before going async — the SDK may reuse the event object.
 	content := ""
@@ -942,6 +1016,17 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 // handler invocation. It runs in its own goroutine so that onMessage returns
 // quickly and does not block the SDK event loop.
 func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string, mentions []*larkim.MentionEvent, messageID, sessionKey, userID, chatID string, rctx replyContext, parentID string, includeGroupHistory bool) {
+	typingTransferred := false
+	defer func() {
+		if !typingTransferred {
+			p.stopTypingReaction(rctx)
+		}
+	}()
+	dispatch := func(msg *core.Message) {
+		typingTransferred = true
+		p.handler(p.dispatchPlatform(), msg)
+	}
+
 	// Resolve user and chat names asynchronously so SDK dispatcher is not blocked.
 	userName := ""
 	if userID != "" {
@@ -991,7 +1076,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			)
 			return
 		}
-		p.handler(p.dispatchPlatform(), &core.Message{
+		dispatch(&core.Message{
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
@@ -1016,7 +1101,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			slog.Error(p.tag()+": download image failed", "error", err)
 			return
 		}
-		p.handler(p.dispatchPlatform(), &core.Message{
+		dispatch(&core.Message{
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
@@ -1042,7 +1127,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			slog.Error(p.tag()+": download audio failed", "error", err)
 			return
 		}
-		p.handler(p.dispatchPlatform(), &core.Message{
+		dispatch(&core.Message{
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
@@ -1065,7 +1150,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		if text == "" && len(images) == 0 && !hasContextPayload {
 			return
 		}
-		p.handler(p.dispatchPlatform(), &core.Message{
+		dispatch(&core.Message{
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
@@ -1099,7 +1184,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			Data:     fileData,
 			FileName: fileBody.FileName,
 		})
-		p.handler(p.dispatchPlatform(), &core.Message{
+		dispatch(&core.Message{
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
@@ -1127,7 +1212,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			Files:                append(contextFiles, files...),
 			ReplyCtx:             rctx,
 		}
-		p.handler(p.dispatchPlatform(), coreMsg)
+		dispatch(coreMsg)
 
 	default:
 		slog.Debug(p.tag()+": ignoring unsupported message type", "type", msgType)
