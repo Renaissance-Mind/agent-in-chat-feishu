@@ -67,7 +67,28 @@ type setupWizardTUIModel struct {
 	done             bool
 	cancelled        bool
 	inputMasked      bool
+	preparingBot     bool
 }
+
+type setupWizardRegistrationDoneMsg struct {
+	result *registrationFlowResult
+	err    error
+}
+
+type setupWizardRegistrationExec struct {
+	opts   registrationFlowOptions
+	result *registrationFlowResult
+}
+
+func (c *setupWizardRegistrationExec) Run() error {
+	result, err := setupWizardRunRegistrationFlow(c.opts)
+	c.result = result
+	return err
+}
+
+func (c *setupWizardRegistrationExec) SetStdin(io.Reader)  {}
+func (c *setupWizardRegistrationExec) SetStdout(io.Writer) {}
+func (c *setupWizardRegistrationExec) SetStderr(io.Writer) {}
 
 var (
 	setupTUIAccentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#F6C453"))
@@ -149,6 +170,8 @@ func (m setupWizardTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.syncCurrentStep()
 		return m, nil
+	case setupWizardRegistrationDoneMsg:
+		return m.handleRegistrationDone(msg)
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -221,16 +244,18 @@ func (m setupWizardTUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if key == "y" && m.isBoolChoice(step.ID) {
-			if err := m.chooseCurrentOption(step.ID, choices, 0); err != nil {
+			cmd, err := m.chooseCurrentOption(step.ID, choices, 0)
+			if err != nil {
 				m.err = err.Error()
 			}
-			return m, nil
+			return m, cmd
 		}
 		if key == "n" && m.isBoolChoice(step.ID) {
-			if err := m.chooseCurrentOption(step.ID, choices, 1); err != nil {
+			cmd, err := m.chooseCurrentOption(step.ID, choices, 1)
+			if err != nil {
 				m.err = err.Error()
 			}
-			return m, nil
+			return m, cmd
 		}
 		if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
 			idx := int(key[0] - '1')
@@ -238,20 +263,22 @@ func (m setupWizardTUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				idx = 9
 			}
 			if idx >= 0 && idx < len(choices) {
-				if err := m.chooseCurrentOption(step.ID, choices, idx); err != nil {
+				cmd, err := m.chooseCurrentOption(step.ID, choices, idx)
+				if err != nil {
 					m.err = err.Error()
 				}
-				return m, nil
+				return m, cmd
 			}
 		}
 		if key == "enter" {
 			if len(choices) == 0 {
 				return m, nil
 			}
-			if err := m.chooseCurrentOption(step.ID, choices, m.cursor); err != nil {
+			cmd, err := m.chooseCurrentOption(step.ID, choices, m.cursor)
+			if err != nil {
 				m.err = err.Error()
 			}
-			return m, nil
+			return m, cmd
 		}
 
 	case setupStepSummaryKind:
@@ -281,28 +308,62 @@ func (m setupWizardTUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *setupWizardTUIModel) chooseCurrentOption(stepID setupWizardStepID, choices []setupChoice, idx int) error {
+func (m *setupWizardTUIModel) chooseCurrentOption(stepID setupWizardStepID, choices []setupChoice, idx int) (tea.Cmd, error) {
 	if idx < 0 || idx >= len(choices) {
-		return nil
+		return nil, nil
 	}
 	m.cursor = idx
 	m.applyChoice(stepID, choices[idx].Key)
-	if err := m.prepareBotAfterChoice(stepID); err != nil {
-		return err
+	cmd, err := m.prepareBotAfterChoice(stepID)
+	if err != nil {
+		return nil, err
+	}
+	if cmd != nil {
+		m.err = ""
+		return cmd, nil
 	}
 	m.err = ""
 	m.advanceAfterChoice(stepID)
-	return nil
+	return nil, nil
 }
 
-func (m *setupWizardTUIModel) prepareBotAfterChoice(stepID setupWizardStepID) error {
+func (m *setupWizardTUIModel) prepareBotAfterChoice(stepID setupWizardStepID) (tea.Cmd, error) {
 	if stepID == setupStepMode && m.cfg.Mode == feishuSetupModeNew {
-		return m.prepareBotIfReady()
+		m.preparingBot = true
+		return m.registrationExecCmd(), nil
 	}
 	if stepID == setupStepPlatform && m.cfg.Mode == feishuSetupModeBind {
-		return m.prepareBotIfReady()
+		return nil, m.prepareBotIfReady()
 	}
-	return nil
+	return nil, nil
+}
+
+func (m setupWizardTUIModel) registrationExecCmd() tea.Cmd {
+	exec := &setupWizardRegistrationExec{
+		opts: registrationFlowOptions{
+			TimeoutSeconds: m.cfg.TimeoutSeconds,
+			QRImagePath:    m.cfg.QRImagePath,
+			Debug:          m.cfg.Debug,
+		},
+	}
+	return tea.Exec(exec, func(err error) tea.Msg {
+		return setupWizardRegistrationDoneMsg{result: exec.result, err: err}
+	})
+}
+
+func (m setupWizardTUIModel) handleRegistrationDone(msg setupWizardRegistrationDoneMsg) (tea.Model, tea.Cmd) {
+	m.preparingBot = false
+	if msg.err != nil {
+		m.err = fmt.Sprintf("onboarding failed: %v", msg.err)
+		return m, nil
+	}
+	if err := applyFeishuSetupWizardRegistrationResult(&m.cfg, msg.result); err != nil {
+		m.err = err.Error()
+		return m, nil
+	}
+	m.err = ""
+	m.advanceAfterChoice(setupStepMode)
+	return m, nil
 }
 
 func (m *setupWizardTUIModel) advance() {
@@ -432,7 +493,11 @@ func (m setupWizardTUIModel) renderMain(width int) string {
 	case setupStepText:
 		lines = append(lines, m.renderTextStep(width)...)
 	case setupStepChoice:
-		lines = append(lines, m.renderChoiceStep(step.ID, width)...)
+		if m.preparingBot && step.ID == setupStepMode {
+			lines = append(lines, m.renderRegistrationExecStep(width)...)
+		} else {
+			lines = append(lines, m.renderChoiceStep(step.ID, width)...)
+		}
 	case setupStepSummaryKind:
 		lines = append(lines, m.renderSummaryStep(width)...)
 	}
@@ -523,6 +588,19 @@ func (m setupWizardTUIModel) renderChoiceStep(stepID setupWizardStepID, width in
 	return lines
 }
 
+func (m setupWizardTUIModel) renderRegistrationExecStep(width int) []string {
+	lines := []string{
+		setupTUISelectedStyle.Render("Opening QR onboarding..."),
+		"",
+		"The wizard is pausing the TUI so the terminal can show a clean QR code.",
+		"The QR code and creation link will appear below; scan it in Feishu/Lark.",
+		"",
+		setupTUIDimStyle.Render("After authorization completes, this wizard will resume automatically."),
+	}
+	_ = width
+	return lines
+}
+
 func (m setupWizardTUIModel) renderSummaryStep(width int) []string {
 	lines := []string{
 		setupTUIAccentSoftStyle.Render("Configuration"),
@@ -570,6 +648,9 @@ func (m setupWizardTUIModel) renderStatus(width int) string {
 	)
 	if step.ID == setupStepSummary {
 		status = "ready to write config"
+	}
+	if m.preparingBot {
+		status = "waiting for QR onboarding"
 	}
 	return setupTUIDimStyle.Width(width).Render(status)
 }

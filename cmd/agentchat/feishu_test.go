@@ -369,17 +369,6 @@ func TestFeishuSetupWizardTUIPreparesScannedBotBeforeAdminStep(t *testing.T) {
 }
 
 func TestFeishuSetupWizardTUISelectCreatePreparesBotAndAdvancesToProfile(t *testing.T) {
-	prevRegister := setupWizardRunRegistrationFlow
-	setupWizardRunRegistrationFlow = func(opts registrationFlowOptions) (*registrationFlowResult, error) {
-		return &registrationFlowResult{
-			AppID:       "cli_created",
-			AppSecret:   "sec_created",
-			OwnerOpenID: "ou_created_admin",
-			Platform:    "feishu",
-		}, nil
-	}
-	t.Cleanup(func() { setupWizardRunRegistrationFlow = prevRegister })
-
 	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
 		ConfigPath:             "/tmp/agentchat/config.toml",
 		Mode:                   feishuSetupModeNew,
@@ -393,8 +382,28 @@ func TestFeishuSetupWizardTUISelectCreatePreparesBotAndAdvancesToProfile(t *test
 	model.stepIndex = 1
 	model.syncCurrentStep()
 
-	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	gotModel := next.(setupWizardTUIModel)
+
+	if cmd == nil {
+		t.Fatal("registration command = nil, want QR onboarding command")
+	}
+	if !gotModel.preparingBot {
+		t.Fatal("preparingBot = false, want true while QR onboarding runs")
+	}
+	if got := gotModel.currentStep().ID; got != setupStepMode {
+		t.Fatalf("current step = %v, want setupStepMode while onboarding runs", got)
+	}
+
+	next, _ = gotModel.Update(setupWizardRegistrationDoneMsg{
+		result: &registrationFlowResult{
+			AppID:       "cli_created",
+			AppSecret:   "sec_created",
+			OwnerOpenID: "ou_created_admin",
+			Platform:    "feishu",
+		},
+	})
+	gotModel = next.(setupWizardTUIModel)
 
 	if got := gotModel.currentStep().ID; got != setupStepProject {
 		t.Fatalf("current step = %v, want setupStepProject", got)

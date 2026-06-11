@@ -1100,8 +1100,8 @@ func runRegistrationFlow(opts registrationFlowOptions) (*registrationFlowResult,
 	}
 
 	fmt.Println("请使用飞书/Lark 手机 App 扫码完成机器人创建与授权：")
-	fmt.Printf("URL: %s\n\n", beginRes.VerificationURIComplete)
 	tryPrintTerminalQRCode(beginRes.VerificationURIComplete)
+	fmt.Printf("创建链接: %s\n\n", beginRes.VerificationURIComplete)
 	if opts.QRImagePath != "" {
 		if err := saveQRCodeImage(beginRes.VerificationURIComplete, opts.QRImagePath); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to save QR image: %v\n", err)

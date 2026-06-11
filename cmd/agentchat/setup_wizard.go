@@ -77,26 +77,7 @@ func prepareFeishuSetupWizardBot(cfg *feishuSetupWizardConfig) error {
 		if err != nil {
 			return fmt.Errorf("onboarding failed: %w", err)
 		}
-		if result == nil {
-			return fmt.Errorf("onboarding returned no result")
-		}
-		appID := strings.TrimSpace(result.AppID)
-		appSecret := strings.TrimSpace(result.AppSecret)
-		if appID == "" || appSecret == "" {
-			return fmt.Errorf("onboarding returned incomplete app credentials")
-		}
-		cfg.AppID = appID
-		cfg.AppSecret = appSecret
-		cfg.OwnerOpenID = strings.TrimSpace(result.OwnerOpenID)
-		if platform := strings.TrimSpace(result.Platform); platform != "" {
-			normalized, err := normalizeFeishuPlatformType(platform)
-			if err != nil {
-				return err
-			}
-			cfg.PlatformType = normalized
-		}
-		cfg.BotPrepared = true
-		return nil
+		return applyFeishuSetupWizardRegistrationResult(cfg, result)
 
 	case feishuSetupModeBind:
 		platformType, err := normalizeFeishuPlatformType(cfg.PlatformType)
@@ -117,6 +98,29 @@ func prepareFeishuSetupWizardBot(cfg *feishuSetupWizardConfig) error {
 	default:
 		return nil
 	}
+}
+
+func applyFeishuSetupWizardRegistrationResult(cfg *feishuSetupWizardConfig, result *registrationFlowResult) error {
+	if result == nil {
+		return fmt.Errorf("onboarding returned no result")
+	}
+	appID := strings.TrimSpace(result.AppID)
+	appSecret := strings.TrimSpace(result.AppSecret)
+	if appID == "" || appSecret == "" {
+		return fmt.Errorf("onboarding returned incomplete app credentials")
+	}
+	cfg.AppID = appID
+	cfg.AppSecret = appSecret
+	cfg.OwnerOpenID = strings.TrimSpace(result.OwnerOpenID)
+	if platform := strings.TrimSpace(result.Platform); platform != "" {
+		normalized, err := normalizeFeishuPlatformType(platform)
+		if err != nil {
+			return err
+		}
+		cfg.PlatformType = normalized
+	}
+	cfg.BotPrepared = true
+	return nil
 }
 
 func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetupWizardConfig) (feishuSetupWizardConfig, error) {
