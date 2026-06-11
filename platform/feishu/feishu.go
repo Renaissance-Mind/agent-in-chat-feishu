@@ -114,6 +114,14 @@ type replyContext struct {
 
 type groupHistoryFetchFunc func(ctx context.Context, chatID string, sinceMS, untilMS int64, pageSize int) ([]groupHistoryEntry, error)
 
+type messageAttachmentRef struct {
+	Kind         string
+	MessageID    string
+	FileKey      string
+	FileName     string
+	ResourceType string
+}
+
 type groupHistoryEntry struct {
 	MessageID  string
 	SenderID   string
@@ -121,6 +129,8 @@ type groupHistoryEntry struct {
 	SenderType string
 	CreatedAt  time.Time
 	Content    string
+	Files      []messageAttachmentRef
+	Images     []messageAttachmentRef
 }
 
 type groupHistoryCache struct {
@@ -942,8 +952,11 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 	// If this message is a reply to another message, fetch the quoted content
 	// and prepend it so the agent has full context.
 	quotedPrefix := ""
+	var contextAttachmentRefs []messageAttachmentRef
 	if parentID != "" {
-		quotedPrefix = p.fetchQuotedMessage(ctx, parentID)
+		var quotedRefs []messageAttachmentRef
+		quotedPrefix, quotedRefs = p.fetchQuotedContext(ctx, parentID)
+		contextAttachmentRefs = append(contextAttachmentRefs, quotedRefs...)
 	}
 	historyPrefix := ""
 	var markContextDelivered func()
@@ -952,9 +965,13 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			p.logPermissionHint(ctx, "group history", err)
 			slog.Warn(p.tag()+": group history sync failed", "chat_id", chatID, "error", err)
 		}
-		historyPrefix, markContextDelivered = p.renderGroupHistoryContext(chatID, messageID)
+		var historyRefs []messageAttachmentRef
+		historyPrefix, markContextDelivered, historyRefs = p.renderGroupHistoryContext(chatID, messageID)
+		contextAttachmentRefs = append(contextAttachmentRefs, historyRefs...)
 	}
-	extraPrefix := joinExtraPrefixes(historyPrefix, quotedPrefix)
+	contextImages, contextFiles, attachmentWarningPrefix := p.downloadContextAttachments(ctx, contextAttachmentRefs)
+	extraPrefix := joinExtraPrefixes(historyPrefix, quotedPrefix, attachmentWarningPrefix)
+	hasContextPayload := strings.TrimSpace(extraPrefix) != "" || len(contextImages) > 0 || len(contextFiles) > 0
 
 	switch msgType {
 	case "text":
@@ -966,7 +983,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			return
 		}
 		text := stripMentions(textBody.Text, mentions, p.botOpenID)
-		if text == "" {
+		if text == "" && !hasContextPayload {
 			slog.Debug(p.tag()+": dropping empty text after mention stripping",
 				"message_id", messageID,
 				"raw_text_len", len(textBody.Text),
@@ -981,6 +998,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			Content:              text,
 			ExtraContent:         extraPrefix,
 			MarkContextDelivered: markContextDelivered,
+			Images:               contextImages,
+			Files:                contextFiles,
 			ReplyCtx:             rctx,
 		})
 
@@ -1003,7 +1022,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			UserID:    userID, UserName: userName, ChatName: chatName,
 			ExtraContent:         extraPrefix,
 			MarkContextDelivered: markContextDelivered,
-			Images:               []core.ImageAttachment{{MimeType: mimeType, Data: imgData}},
+			Images:               append(contextImages, core.ImageAttachment{MimeType: mimeType, Data: imgData}),
+			Files:                contextFiles,
 			ReplyCtx:             rctx,
 		})
 
@@ -1028,6 +1048,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			UserID:    userID, UserName: userName, ChatName: chatName,
 			ExtraContent:         extraPrefix,
 			MarkContextDelivered: markContextDelivered,
+			Images:               contextImages,
+			Files:                contextFiles,
 			Audio: &core.AudioAttachment{
 				MimeType: "audio/opus",
 				Data:     audioData,
@@ -1040,7 +1062,7 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 	case "post":
 		textParts, images := p.parsePostContent(messageID, content)
 		text := stripMentions(strings.Join(textParts, "\n"), mentions, p.botOpenID)
-		if text == "" && len(images) == 0 {
+		if text == "" && len(images) == 0 && !hasContextPayload {
 			return
 		}
 		p.handler(p.dispatchPlatform(), &core.Message{
@@ -1050,7 +1072,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			Content:              text,
 			ExtraContent:         extraPrefix,
 			MarkContextDelivered: markContextDelivered,
-			Images:               images,
+			Images:               append(contextImages, images...),
+			Files:                contextFiles,
 			ReplyCtx:             rctx,
 		})
 
@@ -1071,18 +1094,20 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 		}
 		slog.Debug(p.tag()+": file downloaded", "file_name", fileBody.FileName, "size", len(fileData))
 		mimeType := detectMimeType(fileData)
+		files := append(contextFiles, core.FileAttachment{
+			MimeType: mimeType,
+			Data:     fileData,
+			FileName: fileBody.FileName,
+		})
 		p.handler(p.dispatchPlatform(), &core.Message{
 			SessionKey: sessionKey, Platform: p.platformName,
 			MessageID: messageID,
 			UserID:    userID, UserName: userName, ChatName: chatName,
 			ExtraContent:         extraPrefix,
 			MarkContextDelivered: markContextDelivered,
-			Files: []core.FileAttachment{{
-				MimeType: mimeType,
-				Data:     fileData,
-				FileName: fileBody.FileName,
-			}},
-			ReplyCtx: rctx,
+			Images:               contextImages,
+			Files:                files,
+			ReplyCtx:             rctx,
 		})
 
 	case "merge_forward":
@@ -1098,8 +1123,8 @@ func (p *Platform) dispatchMessage(ctx context.Context, msgType, content string,
 			Content:              text,
 			ExtraContent:         extraPrefix,
 			MarkContextDelivered: markContextDelivered,
-			Images:               images,
-			Files:                files,
+			Images:               append(contextImages, images...),
+			Files:                append(contextFiles, files...),
 			ReplyCtx:             rctx,
 		}
 		p.handler(p.dispatchPlatform(), coreMsg)
@@ -1432,6 +1457,8 @@ type chainMessage struct {
 	senderType string // "user" or "app"
 	text       string
 	parentID   string
+	files      []messageAttachmentRef
+	images     []messageAttachmentRef
 }
 
 // maxReplyChainDepth is the maximum number of parent messages to traverse
@@ -1445,11 +1472,21 @@ const maxReplyChainDepth = 5
 // Returns empty string on any failure (graceful degradation — the user's own
 // message is still delivered without the quote).
 func (p *Platform) fetchQuotedMessage(ctx context.Context, parentID string) string {
+	prefix, _ := p.fetchQuotedContext(ctx, parentID)
+	return prefix
+}
+
+func (p *Platform) fetchQuotedContext(ctx context.Context, parentID string) (string, []messageAttachmentRef) {
 	chain := p.fetchReplyChain(ctx, parentID, maxReplyChainDepth)
 	if len(chain) == 0 {
-		return ""
+		return "", nil
 	}
-	return formatReplyChain(chain)
+	var refs []messageAttachmentRef
+	for _, msg := range chain {
+		refs = append(refs, msg.images...)
+		refs = append(refs, msg.files...)
+	}
+	return formatReplyChain(chain), refs
 }
 
 // fetchSingleMessage retrieves one message by ID from the Feishu API and
@@ -1489,25 +1526,17 @@ func (p *Platform) fetchSingleMessage(ctx context.Context, messageID string) *ch
 		return nil
 	}
 
-	// Extract plain text based on message type.
-	var text string
-	switch item.MsgType {
-	case "text":
-		var textBody struct {
-			Text string `json:"text"`
+	text, images, files := p.messageTextAndAttachmentRefs(messageID, item.MsgType, content, item.Mentions)
+	if text == "" && len(images) == 0 && len(files) == 0 {
+		switch item.MsgType {
+		case "text", "post", "image", "audio", "file", "merge_forward", "interactive":
+			return nil
+		default:
+			if strings.TrimSpace(item.MsgType) == "" {
+				return nil
+			}
+			text = fmt.Sprintf("[%s]", item.MsgType)
 		}
-		if err := json.Unmarshal([]byte(content), &textBody); err == nil {
-			text = replaceMentions(textBody.Text, item.Mentions)
-		}
-	case "post":
-		text = extractPostPlainText(content)
-	case "interactive":
-		text = extractInteractiveCardText(content)
-	default:
-		text = fmt.Sprintf("[%s]", item.MsgType)
-	}
-	if text == "" {
-		return nil
 	}
 
 	// Resolve sender name.
@@ -1532,6 +1561,8 @@ func (p *Platform) fetchSingleMessage(ctx context.Context, messageID string) *ch
 		senderType: item.Sender.SenderType,
 		text:       text,
 		parentID:   item.ParentID,
+		files:      files,
+		images:     images,
 	}
 }
 
@@ -2887,6 +2918,7 @@ const (
 	defaultGroupHistoryLookback = 24 * time.Hour
 	maxGroupHistoryFetchPages   = 3
 	maxFeishuHistoryPageSize    = 50
+	maxContextAttachments       = 5
 )
 
 func (p *Platform) syncGroupHistory(ctx context.Context, chatID string) error {
@@ -3033,8 +3065,8 @@ func (p *Platform) groupHistoryEntryFromMessage(ctx context.Context, chatID stri
 	if msg.Body != nil {
 		content = stringValue(msg.Body.Content)
 	}
-	text := p.groupHistoryMessageText(msgType, content, msg.Mentions)
-	if text == "" {
+	text, images, files := p.messageTextAndAttachmentRefs(stringValue(msg.MessageId), msgType, content, msg.Mentions)
+	if text == "" && len(images) == 0 && len(files) == 0 {
 		return groupHistoryEntry{}, false
 	}
 	senderID := ""
@@ -3058,46 +3090,78 @@ func (p *Platform) groupHistoryEntryFromMessage(ctx context.Context, chatID stri
 		SenderType: senderType,
 		CreatedAt:  createdAt,
 		Content:    text,
+		Files:      files,
+		Images:     images,
 	}, true
 }
 
-func (p *Platform) groupHistoryMessageText(msgType, content string, mentions []*larkim.Mention) string {
+func (p *Platform) messageTextAndAttachmentRefs(messageID, msgType, content string, mentions []*larkim.Mention) (string, []messageAttachmentRef, []messageAttachmentRef) {
 	switch msgType {
 	case "text":
 		var textBody struct {
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal([]byte(content), &textBody); err != nil {
-			return ""
+			return "", nil, nil
 		}
-		return strings.TrimSpace(replaceMentions(textBody.Text, mentions))
+		return strings.TrimSpace(replaceMentions(textBody.Text, mentions)), nil, nil
 	case "post":
-		return strings.TrimSpace(extractPostPlainText(content))
+		return strings.TrimSpace(extractPostPlainText(content)), nil, nil
 	case "image":
-		return "[image]"
+		var imageBody struct {
+			ImageKey string `json:"image_key"`
+		}
+		var images []messageAttachmentRef
+		if err := json.Unmarshal([]byte(content), &imageBody); err == nil && strings.TrimSpace(imageBody.ImageKey) != "" {
+			images = append(images, messageAttachmentRef{
+				Kind:         "image",
+				MessageID:    messageID,
+				FileKey:      strings.TrimSpace(imageBody.ImageKey),
+				ResourceType: "image",
+			})
+		}
+		return "[image]", images, nil
 	case "audio":
-		return "[audio]"
+		return "[audio]", nil, nil
 	case "file":
 		var fileBody struct {
 			FileName string `json:"file_name"`
+			FileKey  string `json:"file_key"`
 		}
-		if err := json.Unmarshal([]byte(content), &fileBody); err == nil && strings.TrimSpace(fileBody.FileName) != "" {
-			return "[file: " + strings.TrimSpace(fileBody.FileName) + "]"
+		var files []messageAttachmentRef
+		if err := json.Unmarshal([]byte(content), &fileBody); err == nil {
+			fileName := strings.TrimSpace(fileBody.FileName)
+			if strings.TrimSpace(fileBody.FileKey) != "" {
+				refName := fileName
+				if refName == "" {
+					refName = "attachment"
+				}
+				files = append(files, messageAttachmentRef{
+					Kind:         "file",
+					MessageID:    messageID,
+					FileKey:      strings.TrimSpace(fileBody.FileKey),
+					FileName:     refName,
+					ResourceType: "file",
+				})
+			}
+			if fileName != "" {
+				return "[file: " + fileName + "]", nil, files
+			}
 		}
-		return "[file]"
+		return "[file]", nil, files
 	case "merge_forward":
-		return "[forwarded messages]"
+		return "[forwarded messages]", nil, nil
 	case "interactive":
 		if isAgentProgressInteractiveCard(content) {
-			return ""
+			return "", nil, nil
 		}
 		text := strings.TrimSpace(extractInteractiveCardText(content))
 		if shouldSkipInteractiveHistoryText(text) {
-			return ""
+			return "", nil, nil
 		}
-		return text
+		return text, nil, nil
 	default:
-		return ""
+		return "", nil, nil
 	}
 }
 
@@ -3243,12 +3307,12 @@ func (p *Platform) mergeGroupHistory(chatID string, incoming []groupHistoryEntry
 	cache.delivered = nextDelivered
 }
 
-func (p *Platform) renderGroupHistoryContext(chatID, currentMessageID string) (string, func()) {
+func (p *Platform) renderGroupHistoryContext(chatID, currentMessageID string) (string, func(), []messageAttachmentRef) {
 	p.groupHistoryMu.Lock()
 	cache := p.groupHistoryByChat[chatID]
 	if cache == nil || len(cache.entries) == 0 {
 		p.groupHistoryMu.Unlock()
-		return "", nil
+		return "", nil, nil
 	}
 	if cache.delivered == nil {
 		cache.delivered = make(map[string]struct{})
@@ -3265,6 +3329,7 @@ func (p *Platform) renderGroupHistoryContext(chatID, currentMessageID string) (s
 		"Recent group messages fetched at trigger time. Use them as background and answer the current trigger.",
 	}
 	var deliveredKeys []string
+	var refs []messageAttachmentRef
 	for _, entry := range entries {
 		key := groupHistoryEntryKey(entry)
 		if entry.MessageID != "" && entry.MessageID == currentMessageID {
@@ -3288,12 +3353,14 @@ func (p *Platform) renderGroupHistoryContext(chatID, currentMessageID string) (s
 		}
 		lines = append(lines, fmt.Sprintf("[%s %s] %s", entry.CreatedAt.Local().Format("15:04"), name, content))
 		deliveredKeys = append(deliveredKeys, key)
+		refs = append(refs, entry.Images...)
+		refs = append(refs, entry.Files...)
 	}
 	markDelivered := p.groupHistoryDeliveredMarker(chatID, deliveredKeys)
 	if len(lines) == 2 {
-		return "", markDelivered
+		return "", markDelivered, refs
 	}
-	return strings.Join(lines, "\n"), markDelivered
+	return strings.Join(lines, "\n"), markDelivered, refs
 }
 
 func (p *Platform) groupHistoryDeliveredMarker(chatID string, keys []string) func() {
@@ -3366,6 +3433,110 @@ func joinExtraPrefixes(parts ...string) string {
 		}
 	}
 	return strings.Join(kept, "\n\n")
+}
+
+func (p *Platform) downloadContextAttachments(ctx context.Context, refs []messageAttachmentRef) ([]core.ImageAttachment, []core.FileAttachment, string) {
+	refs, skipped := uniqueContextAttachmentRefs(refs, maxContextAttachments)
+	var images []core.ImageAttachment
+	var files []core.FileAttachment
+	var warnings []string
+	if skipped > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d referenced attachment(s) skipped because the per-message context limit is %d", skipped, maxContextAttachments))
+	}
+	for _, ref := range refs {
+		switch ref.Kind {
+		case "image":
+			data, mimeType, err := p.downloadImage(ref.MessageID, ref.FileKey)
+			if err != nil {
+				p.logPermissionHint(ctx, "context image download", err)
+				warnings = append(warnings, fmt.Sprintf("image %s: %v", ref.attachmentLabel(), err))
+				continue
+			}
+			images = append(images, core.ImageAttachment{MimeType: mimeType, Data: data, FileName: ref.FileName})
+		case "file":
+			data, err := p.downloadResource(ref.MessageID, ref.FileKey, ref.resourceType())
+			if err != nil {
+				p.logPermissionHint(ctx, "context file download", err)
+				warnings = append(warnings, fmt.Sprintf("file %s: %v", ref.attachmentLabel(), err))
+				continue
+			}
+			files = append(files, core.FileAttachment{
+				MimeType: detectMimeType(data),
+				Data:     data,
+				FileName: ref.fileNameOrDefault(),
+			})
+		}
+	}
+	if len(warnings) == 0 {
+		return images, files, ""
+	}
+	var b strings.Builder
+	b.WriteString("[Feishu attachment download warnings]\n")
+	b.WriteString("Some referenced chat-history attachments could not be attached:\n")
+	for _, warning := range warnings {
+		b.WriteString("- ")
+		b.WriteString(warning)
+		b.WriteString("\n")
+	}
+	return images, files, strings.TrimSpace(b.String())
+}
+
+func uniqueContextAttachmentRefs(refs []messageAttachmentRef, limit int) ([]messageAttachmentRef, int) {
+	if len(refs) == 0 {
+		return nil, 0
+	}
+	seen := make(map[string]struct{}, len(refs))
+	out := make([]messageAttachmentRef, 0, len(refs))
+	skipped := 0
+	for _, ref := range refs {
+		ref.Kind = strings.TrimSpace(ref.Kind)
+		ref.MessageID = strings.TrimSpace(ref.MessageID)
+		ref.FileKey = strings.TrimSpace(ref.FileKey)
+		ref.FileName = strings.TrimSpace(ref.FileName)
+		ref.ResourceType = strings.TrimSpace(ref.ResourceType)
+		if ref.Kind == "" || ref.MessageID == "" || ref.FileKey == "" {
+			continue
+		}
+		key := strings.Join([]string{ref.Kind, ref.MessageID, ref.FileKey}, "\x00")
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if limit > 0 && len(out) >= limit {
+			skipped++
+			continue
+		}
+		out = append(out, ref)
+	}
+	return out, skipped
+}
+
+func (r messageAttachmentRef) resourceType() string {
+	if strings.TrimSpace(r.ResourceType) != "" {
+		return strings.TrimSpace(r.ResourceType)
+	}
+	if r.Kind == "image" {
+		return "image"
+	}
+	return "file"
+}
+
+func (r messageAttachmentRef) fileNameOrDefault() string {
+	name := strings.TrimSpace(r.FileName)
+	if name != "" {
+		return name
+	}
+	return "attachment"
+}
+
+func (r messageAttachmentRef) attachmentLabel() string {
+	if name := strings.TrimSpace(r.FileName); name != "" {
+		return name
+	}
+	if key := strings.TrimSpace(r.FileKey); key != "" {
+		return key
+	}
+	return "attachment"
 }
 
 // TODO: Session-key derivation and reply-thread behavior are split across multiple code paths here.

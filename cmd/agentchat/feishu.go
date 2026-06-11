@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -561,6 +562,7 @@ func runFeishuPermissions(args []string) {
 	platformType := fs.String("platform-type", "", "force platform type: feishu or lark")
 	appID := fs.String("app-id", "", "app_id override; if omitted, read from config")
 	appSecret := fs.String("app-secret", "", "app_secret override; required for --apply when not in config")
+	feature := fs.String("feature", "", "permission feature set: file-download, full-group-context, or all")
 	apply := fs.Bool("apply", false, "request tenant admin approval through Feishu application/v6/scopes/apply")
 	_ = fs.Parse(args)
 
@@ -591,7 +593,12 @@ func runFeishuPermissions(args []string) {
 		fmt.Fprintln(os.Stderr, "Error: app_id is empty; pass --app-id or configure a Feishu/Lark platform first")
 		os.Exit(1)
 	}
-	printFeishuPermissionGuidance(target.platformType, target.appID)
+	features, err := parseFeishuPermissionFeatures(*feature)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	printFeishuPermissionGuidance(target.platformType, target.appID, features)
 	if *apply {
 		if target.appSecret == "" {
 			fmt.Fprintln(os.Stderr, "Error: app_secret is required for --apply; pass --app-secret or read it from a configured platform")
@@ -672,12 +679,15 @@ func resolveFeishuPermissionTarget(projectName, platformType string, platformInd
 }
 
 func buildFeishuPermissionGuidance(platformType, appID string) feishuPermissionGuidance {
+	return buildFeishuPermissionGuidanceForFeatures(platformType, appID, nil)
+}
+
+func buildFeishuPermissionGuidanceForFeatures(platformType, appID string, features []string) feishuPermissionGuidance {
 	appID = strings.TrimSpace(appID)
 	if appID == "" {
 		return feishuPermissionGuidance{}
 	}
-	scopes := core.FeishuRecommendedBotScopes()
-	events := core.FeishuRecommendedBotEvents()
+	scopes, events := feishuPermissionFeatureScopes(features)
 
 	return feishuPermissionGuidance{
 		Scopes:               scopes,
@@ -687,6 +697,84 @@ func buildFeishuPermissionGuidance(platformType, appID string) feishuPermissionG
 		PermissionConsoleURL: core.FeishuPermissionConsoleURL(platformType, appID),
 		EventConsoleURL:      core.FeishuEventConsoleURL(platformType, appID),
 	}
+}
+
+func parseFeishuPermissionFeatures(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var features []string
+	for _, part := range strings.Split(raw, ",") {
+		feature := strings.ToLower(strings.TrimSpace(part))
+		if feature == "" {
+			continue
+		}
+		switch feature {
+		case "all", "recommended", "default", "file-download", "files", "attachments", "attachment", "full-group-context", "group-context", "history":
+			features = append(features, feature)
+		default:
+			return nil, fmt.Errorf("unknown permission feature %q (want file-download, full-group-context, or all)", feature)
+		}
+	}
+	return features, nil
+}
+
+func feishuPermissionFeatureScopes(features []string) ([]string, []string) {
+	if len(features) == 0 {
+		return core.FeishuRecommendedBotScopes(), core.FeishuRecommendedBotEvents()
+	}
+	scopeSet := map[string]struct{}{}
+	eventSet := map[string]struct{}{}
+	addScopes := func(scopes ...string) {
+		for _, scope := range scopes {
+			if strings.TrimSpace(scope) != "" {
+				scopeSet[scope] = struct{}{}
+			}
+		}
+	}
+	addEvents := func(events ...string) {
+		for _, event := range events {
+			if strings.TrimSpace(event) != "" {
+				eventSet[event] = struct{}{}
+			}
+		}
+	}
+	for _, feature := range features {
+		switch feature {
+		case "all", "recommended", "default":
+			addScopes(core.FeishuRecommendedBotScopes()...)
+			addEvents(core.FeishuRecommendedBotEvents()...)
+		case "file-download", "files", "attachments", "attachment":
+			addScopes(
+				"im:message",
+				"im:message.group_at_msg.include_bot:readonly",
+				"im:message.group_at_msg:readonly",
+				"im:message.p2p_msg:readonly",
+			)
+			addEvents("im.message.receive_v1")
+		case "full-group-context", "group-context", "history":
+			addScopes(
+				"im:chat.members:bot_access",
+				"im:chat.members:read",
+				"im:chat:read",
+				"im:message",
+				"im:message.group_msg",
+			)
+			addEvents("im.message.receive_v1")
+		}
+	}
+	scopes := make([]string, 0, len(scopeSet))
+	for scope := range scopeSet {
+		scopes = append(scopes, scope)
+	}
+	sort.Strings(scopes)
+	events := make([]string, 0, len(eventSet))
+	for event := range eventSet {
+		events = append(events, event)
+	}
+	sort.Strings(events)
+	return scopes, events
 }
 
 func (g feishuPermissionGuidance) String() string {
@@ -714,8 +802,8 @@ func (g feishuPermissionGuidance) String() string {
 	return b.String()
 }
 
-func printFeishuPermissionGuidance(platformType, appID string) feishuPermissionGuidance {
-	guidance := buildFeishuPermissionGuidance(platformType, appID)
+func printFeishuPermissionGuidance(platformType, appID string, features []string) feishuPermissionGuidance {
+	guidance := buildFeishuPermissionGuidanceForFeatures(platformType, appID, features)
 	if text := guidance.String(); text != "" {
 		fmt.Print(text)
 	}
@@ -842,6 +930,7 @@ Options:
   --share-session-in-channel=false
                               Use separate sessions per sender in a group chat
   --enable-feishu-card=false  Disable Feishu interactive progress cards
+  --feature <name>            Permission feature for "permissions": file-download, full-group-context, all
   --apply                     Request tenant permission approval via OpenAPI
   --timeout <seconds>         QR onboarding timeout (default: 600)
   --qr-image <path>           Save QR code as PNG image file (e.g. --qr-image qr.png)
@@ -867,6 +956,8 @@ Examples:
 
   # Print direct permission/event links for an existing app
   agentchat feishu permissions
+  agentchat feishu permissions --feature file-download
+  agentchat feishu permissions --feature full-group-context
 
   # Use only when you must force QR onboarding
   agentchat feishu new --platform-type lark`)

@@ -1075,6 +1075,207 @@ func TestFeishu_GroupContextBufferUsesHistoryOnTrigger(t *testing.T) {
 	}
 }
 
+func TestFeishu_GroupContextBufferAttachesHistoryFile(t *testing.T) {
+	const fileName = "未达年限报废家具统计.xlsx"
+	fileBytes := []byte("xlsx bytes")
+	var resourceHits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			w.Header().Set("Content-Type", "application/json")
+			writeJSON(t, w, map[string]any{
+				"code":                0,
+				"msg":                 "success",
+				"expire":              7200,
+				"tenant_access_token": "valid-token",
+			})
+		case "/open-apis/im/v1/messages/om_file/resources/file_xlsx":
+			resourceHits++
+			if got := r.URL.Query().Get("type"); got != "file" {
+				t.Fatalf("resource type query = %q, want file", got)
+			}
+			w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+			_, _ = w.Write(fileBytes)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	p, err := newPlatform("feishu", lark.FeishuBaseUrl, map[string]any{
+		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
+		"domain":                      srv.URL,
+		"share_session_in_channel":    true,
+		"group_context_buffer":        true,
+		"context_buffer_max_messages": 100,
+		"context_buffer_max_age_mins": 0,
+	})
+	if err != nil {
+		t.Fatalf("newPlatform(feishu) error = %v", err)
+	}
+	ip := p.(*interactivePlatform)
+	ip.botOpenID = "ou_bot"
+	ip.userNameCache.Store("ou_user", "User")
+	ip.chatNameCache.Store("oc_group", "Group")
+	baseTime := time.Date(2026, 6, 9, 1, 18, 0, 0, time.Local)
+	ip.groupHistoryFetch = func(_ context.Context, chatID string, _ int64, _ int64, _ int) ([]groupHistoryEntry, error) {
+		if chatID != "oc_group" {
+			t.Fatalf("history chatID = %q, want oc_group", chatID)
+		}
+		return []groupHistoryEntry{
+			{
+				MessageID:  "om_file",
+				SenderID:   "ou_zxk",
+				SenderName: "赵雪坤",
+				SenderType: "user",
+				CreatedAt:  baseTime,
+				Content:    "[file: " + fileName + "]",
+				Files: []messageAttachmentRef{{
+					Kind:         "file",
+					MessageID:    "om_file",
+					FileKey:      "file_xlsx",
+					FileName:     fileName,
+					ResourceType: "file",
+				}},
+			},
+			{
+				MessageID:  "om_trigger",
+				SenderID:   "ou_user",
+				SenderName: "User",
+				SenderType: "user",
+				CreatedAt:  baseTime.Add(time.Minute),
+				Content:    "这个excel中写的是什么？",
+			},
+		}, nil
+	}
+
+	msgCh := make(chan *core.Message, 1)
+	ip.handler = func(_ core.Platform, msg *core.Message) {
+		msgCh <- msg
+	}
+	mention := []*larkim.MentionEvent{{
+		Key: stringPtr("@bot"),
+		Id:  &larkim.UserId{OpenId: stringPtr("ou_bot")},
+	}}
+	_ = ip.onMessage(context.Background(), feishuTextEvent("om_trigger", "oc_group", "ou_user", "group", `{"text":"@bot 这个excel中写的是什么？"}`, mention))
+
+	select {
+	case got := <-msgCh:
+		if !strings.Contains(got.ExtraContent, "[01:18 赵雪坤] [file: "+fileName+"]") {
+			t.Fatalf("ExtraContent missing file history line: %q", got.ExtraContent)
+		}
+		if len(got.Files) != 1 {
+			t.Fatalf("Files len = %d, want 1", len(got.Files))
+		}
+		if got.Files[0].FileName != fileName {
+			t.Fatalf("FileName = %q, want %q", got.Files[0].FileName, fileName)
+		}
+		if string(got.Files[0].Data) != string(fileBytes) {
+			t.Fatalf("file data = %q, want %q", string(got.Files[0].Data), string(fileBytes))
+		}
+		if resourceHits != 1 {
+			t.Fatalf("resourceHits = %d, want 1", resourceHits)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected mention message to be handled")
+	}
+}
+
+func TestFeishu_QuotedFileMessageIsAttached(t *testing.T) {
+	const fileName = "未达年限报废家具统计.xlsx"
+	fileBytes := []byte("quoted xlsx bytes")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			w.Header().Set("Content-Type", "application/json")
+			writeJSON(t, w, map[string]any{
+				"code":                0,
+				"msg":                 "success",
+				"expire":              7200,
+				"tenant_access_token": "valid-token",
+			})
+		case "/open-apis/im/v1/messages/om_file":
+			w.Header().Set("Content-Type", "application/json")
+			writeJSON(t, w, map[string]any{
+				"code": 0,
+				"msg":  "success",
+				"data": map[string]any{
+					"items": []map[string]any{
+						{
+							"msg_type":  "file",
+							"parent_id": "",
+							"sender": map[string]any{
+								"id":          "ou_zxk",
+								"sender_type": "user",
+							},
+							"body": map[string]any{
+								"content": `{"file_key":"file_xlsx","file_name":"` + fileName + `"}`,
+							},
+						},
+					},
+				},
+			})
+		case "/open-apis/im/v1/messages/om_file/resources/file_xlsx":
+			if got := r.URL.Query().Get("type"); got != "file" {
+				t.Fatalf("resource type query = %q, want file", got)
+			}
+			w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+			_, _ = w.Write(fileBytes)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	p, err := newPlatform("feishu", lark.FeishuBaseUrl, map[string]any{
+		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
+		"domain":                   srv.URL,
+		"share_session_in_channel": true,
+		"group_context_buffer":     false,
+	})
+	if err != nil {
+		t.Fatalf("newPlatform(feishu) error = %v", err)
+	}
+	ip := p.(*interactivePlatform)
+	ip.botOpenID = "ou_bot"
+	ip.userNameCache.Store("ou_user", "User")
+	ip.userNameCache.Store("ou_zxk", "赵雪坤")
+	ip.chatNameCache.Store("oc_group", "Group")
+
+	msgCh := make(chan *core.Message, 1)
+	ip.handler = func(_ core.Platform, msg *core.Message) {
+		msgCh <- msg
+	}
+	mention := []*larkim.MentionEvent{{
+		Key: stringPtr("@bot"),
+		Id:  &larkim.UserId{OpenId: stringPtr("ou_bot")},
+	}}
+	event := feishuTextEvent("om_trigger", "oc_group", "ou_user", "group", `{"text":"@bot 这个excel中写的是什么？"}`, mention)
+	event.Event.Message.ParentId = stringPtr("om_file")
+	_ = ip.onMessage(context.Background(), event)
+
+	select {
+	case got := <-msgCh:
+		if !strings.Contains(got.ExtraContent, "[Quoted message from 赵雪坤]") {
+			t.Fatalf("ExtraContent missing quoted file prefix: %q", got.ExtraContent)
+		}
+		if !strings.Contains(got.ExtraContent, "[file: "+fileName+"]") {
+			t.Fatalf("ExtraContent missing quoted file name: %q", got.ExtraContent)
+		}
+		if len(got.Files) != 1 {
+			t.Fatalf("Files len = %d, want 1", len(got.Files))
+		}
+		if got.Files[0].FileName != fileName {
+			t.Fatalf("FileName = %q, want %q", got.Files[0].FileName, fileName)
+		}
+		if string(got.Files[0].Data) != string(fileBytes) {
+			t.Fatalf("file data = %q, want %q", string(got.Files[0].Data), string(fileBytes))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected reply message to be handled")
+	}
+}
+
 func TestFeishu_GroupContextBufferOnlyAddsNewHistoryAfterDelivery(t *testing.T) {
 	p, err := newPlatform("feishu", lark.FeishuBaseUrl, map[string]any{
 		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,

@@ -551,6 +551,35 @@ func TestBuildFeishuPermissionGuidancePutsScopeApplyURLLast(t *testing.T) {
 	}
 }
 
+func TestBuildFeishuPermissionGuidanceForFileDownloadFeature(t *testing.T) {
+	guidance := buildFeishuPermissionGuidanceForFeatures("feishu", "cli_abc", []string{"file-download"})
+	if guidance.ScopeApplyURL == "" {
+		t.Fatal("ScopeApplyURL is empty")
+	}
+	requireStringSliceContains(t, guidance.Scopes, "im:message")
+	requireStringSliceContains(t, guidance.Scopes, "im:message.group_at_msg:readonly")
+	requireStringSliceContains(t, guidance.Scopes, "im:message.p2p_msg:readonly")
+	requireStringSliceNotContains(t, guidance.Scopes, "im:message.group_msg")
+	requireStringSliceContains(t, guidance.Events, "im.message.receive_v1")
+	if !strings.Contains(guidance.ScopeApplyURL, "im%3Amessage") {
+		t.Fatalf("ScopeApplyURL should include encoded im:message scope: %s", guidance.ScopeApplyURL)
+	}
+}
+
+func TestParseFeishuPermissionFeatures(t *testing.T) {
+	features, err := parseFeishuPermissionFeatures(" file-download, history ")
+	if err != nil {
+		t.Fatalf("parseFeishuPermissionFeatures returned error: %v", err)
+	}
+	if len(features) != 2 || features[0] != "file-download" || features[1] != "history" {
+		t.Fatalf("features = %#v, want file-download and history", features)
+	}
+
+	if _, err := parseFeishuPermissionFeatures("unknown"); err == nil {
+		t.Fatal("expected unknown feature error, got nil")
+	}
+}
+
 func TestResolveFeishuPermissionTargetReadsConfig(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
@@ -653,6 +682,25 @@ func TestApplyFeishuPermissionRequest(t *testing.T) {
 	}
 	if !sawToken || !sawApply {
 		t.Fatalf("sawToken=%v sawApply=%v, want both requests", sawToken, sawApply)
+	}
+}
+
+func requireStringSliceContains(t *testing.T, values []string, want string) {
+	t.Helper()
+	for _, value := range values {
+		if value == want {
+			return
+		}
+	}
+	t.Fatalf("%q not found in %#v", want, values)
+}
+
+func requireStringSliceNotContains(t *testing.T, values []string, unwanted string) {
+	t.Helper()
+	for _, value := range values {
+		if value == unwanted {
+			t.Fatalf("%q unexpectedly found in %#v", unwanted, values)
+		}
 	}
 }
 
