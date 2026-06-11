@@ -47,6 +47,13 @@ func shouldUseFeishuSetupWizard(force, disabled bool, argCount int) bool {
 }
 
 func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizardConfig) (feishuSetupWizardConfig, error) {
+	if canRunFeishuSetupWizardTUI(in, out) {
+		return runFeishuSetupWizardTUI(in.(*os.File), out.(*os.File), defaults)
+	}
+	return runFeishuSetupWizardPlain(in, out, defaults)
+}
+
+func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetupWizardConfig) (feishuSetupWizardConfig, error) {
 	if in == nil {
 		in = os.Stdin
 	}

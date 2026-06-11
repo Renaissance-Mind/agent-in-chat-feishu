@@ -236,6 +236,58 @@ func TestFeishuSetupWizardRendersCompactSections(t *testing.T) {
 	}
 }
 
+func TestFeishuSetupWizardTUIViewShowsShellLayout(t *testing.T) {
+	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeBind,
+		Project:                "kimi-profile",
+		AgentType:              "kimi",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: false,
+	})
+	model.width = 100
+	model.height = 30
+
+	view := model.View()
+	for _, want := range []string{
+		"Agent-in-Chat-Feishu setup - step 1/",
+		"Setup",
+		">  1 Config file",
+		"Config file",
+		"Where agentchat stores credentials",
+		"profile kimi-profile | agent kimi | mode connect_existing | service config_only",
+		"enter select/next | esc back | q quit",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("TUI view missing %q:\n%s", want, view)
+		}
+	}
+}
+
+func TestFeishuSetupWizardTUIConnectModeShowsCredentialSteps(t *testing.T) {
+	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeNew,
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+	model.stepIndex = 1
+	model.syncCurrentStep()
+	model.applyChoice(setupStepMode, "connect")
+	model.advance()
+
+	if got := model.currentStep().ID; got != setupStepAppID {
+		t.Fatalf("current step = %v, want setupStepAppID", got)
+	}
+}
+
 func TestResolveTargetProjectDefaultsToFeishu(t *testing.T) {
 	dir := t.TempDir()
 	prev := config.ConfigPath
