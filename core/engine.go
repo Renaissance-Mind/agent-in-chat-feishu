@@ -2443,7 +2443,6 @@ func (e *Engine) getOrCreateInteractiveStateWith(sessionKey string, p Platform, 
 		// continues outputting while new agent starts (issue #327).
 		e.closeAgentSessionWithTimeout(sessionKey, state.agentSession)
 		delete(e.interactiveStates, sessionKey)
-		ok = false // prevent reading stale settings below
 	}
 
 	// Select the agent to use for this session
@@ -11471,15 +11470,6 @@ func extractUserID(sessionKey string) string {
 		return parts[2]
 	}
 	return ""
-}
-
-func stringSliceContains(ss []string, target string) bool {
-	for _, s := range ss {
-		if s == target {
-			return true
-		}
-	}
-	return false
 }
 
 func extractPlatformName(sessionKey string) string {

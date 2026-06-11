@@ -92,7 +92,6 @@ var (
 	setupTUIAccentStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#F6C453"))
 	setupTUIAccentSoftStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#F2A65A"))
 	setupTUIDimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#7B7F87"))
-	setupTUIBorderStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#3C414B"))
 	setupTUIHeaderStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F6C453"))
 	setupTUISelectedStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F6C453"))
 	setupTUIErrorStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#F97066"))
@@ -548,7 +547,6 @@ func (m setupWizardTUIModel) renderInputLine(width int) string {
 	var rendered string
 	if len(displayRunes) == 0 {
 		rendered = setupTUIDimStyle.Render(m.textPlaceholder(m.currentStep().ID))
-		cursor = 0
 	} else {
 		before := string(displayRunes[:cursor])
 		at := " "

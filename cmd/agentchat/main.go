@@ -1064,23 +1064,6 @@ func applyProjectStateOverride(projectName string, agent core.Agent, configuredW
 	return override
 }
 
-// resolveClaudeProjectDir returns the Claude Code project directory for a given
-// work directory, or "" if it doesn't exist.
-func resolveClaudeProjectDir(workDir string) string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	// Claude Code encodes paths by replacing os.PathSeparator with "-"
-	// e.g. /home/leigh/workspace/agentchat -> -home-leigh-workspace-agentchat
-	encoded := strings.ReplaceAll(workDir, string(os.PathSeparator), "-")
-	dir := filepath.Join(homeDir, ".claude", "projects", encoded)
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return ""
-	}
-	return dir
-}
-
 // resolveConfigPath determines which config file to use.
 // Priority: explicit flag → ./config.toml → ~/.agentchat/config.toml
 func resolveConfigPath(explicit string) string {

@@ -1550,17 +1550,6 @@ type chainMessage struct {
 // when building a reply chain. This limits API calls per inbound reply.
 const maxReplyChainDepth = 5
 
-// fetchQuotedMessage retrieves the content of a parent message that the user
-// is replying to, and returns a formatted prefix string for context injection.
-// For multi-level reply chains, it traces parent_id links up to maxReplyChainDepth
-// levels and returns the full conversation chain.
-// Returns empty string on any failure (graceful degradation — the user's own
-// message is still delivered without the quote).
-func (p *Platform) fetchQuotedMessage(ctx context.Context, parentID string) string {
-	prefix, _ := p.fetchQuotedContext(ctx, parentID)
-	return prefix
-}
-
 func (p *Platform) fetchQuotedContext(ctx context.Context, parentID string) (string, []messageAttachmentRef) {
 	chain := p.fetchReplyChain(ctx, parentID, maxReplyChainDepth)
 	if len(chain) == 0 {
@@ -2490,74 +2479,6 @@ func containsMarkdown(s string) bool {
 		}
 	}
 	return false
-}
-
-// buildPostJSON converts markdown content to Feishu post (rich text) format.
-func buildPostJSON(content string) string {
-	lines := strings.Split(content, "\n")
-	var postLines [][]map[string]any
-	inCodeBlock := false
-	var codeLines []string
-	codeLang := ""
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "```") {
-			if !inCodeBlock {
-				inCodeBlock = true
-				codeLang = strings.TrimPrefix(trimmed, "```")
-				codeLines = nil
-			} else {
-				inCodeBlock = false
-				postLines = append(postLines, []map[string]any{{
-					"tag":      "code_block",
-					"language": codeLang,
-					"text":     strings.Join(codeLines, "\n"),
-				}})
-			}
-			continue
-		}
-
-		if inCodeBlock {
-			codeLines = append(codeLines, line)
-			continue
-		}
-
-		// Convert # headers to bold
-		headerLine := line
-		for level := 6; level >= 1; level-- {
-			prefix := strings.Repeat("#", level) + " "
-			if strings.HasPrefix(line, prefix) {
-				headerLine = "**" + strings.TrimPrefix(line, prefix) + "**"
-				break
-			}
-		}
-
-		elements := parseInlineMarkdown(headerLine)
-		if len(elements) > 0 {
-			postLines = append(postLines, elements)
-		} else {
-			postLines = append(postLines, []map[string]any{{"tag": "text", "text": ""}})
-		}
-	}
-
-	// Handle unclosed code block
-	if inCodeBlock && len(codeLines) > 0 {
-		postLines = append(postLines, []map[string]any{{
-			"tag":      "code_block",
-			"language": codeLang,
-			"text":     strings.Join(codeLines, "\n"),
-		}})
-	}
-
-	post := map[string]any{
-		"zh_cn": map[string]any{
-			"content": postLines,
-		},
-	}
-	b, _ := json.Marshal(post)
-	return string(b)
 }
 
 // isValidFeishuHref checks whether a URL is acceptable as a Feishu post href.
