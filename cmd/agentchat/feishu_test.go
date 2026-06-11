@@ -14,6 +14,7 @@ import (
 
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/config"
 	"github.com/Renaissance-Mind/agent-in-chat-feishu/daemon"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestResolveFeishuSetupInputs_AutoModeWithoutCredentialsUsesNew(t *testing.T) {
@@ -81,6 +82,15 @@ func TestSetupOwnerOpenIDForConfigKeepsUserOpenID(t *testing.T) {
 }
 
 func TestFeishuSetupWizardCollectsKimiBindConfig(t *testing.T) {
+	prevValidate := setupWizardValidateAppCredentials
+	setupWizardValidateAppCredentials = func(appID, appSecret, platformType string) (string, error) {
+		if appID != "cli_kimi" || appSecret != "sec_kimi" || platformType != "feishu" {
+			t.Fatalf("validate args = (%q, %q, %q)", appID, appSecret, platformType)
+		}
+		return "feishu", nil
+	}
+	t.Cleanup(func() { setupWizardValidateAppCredentials = prevValidate })
+
 	input := strings.NewReader(strings.Join([]string{
 		"",             // config file
 		"connect",      // bot setup mode
@@ -123,6 +133,9 @@ func TestFeishuSetupWizardCollectsKimiBindConfig(t *testing.T) {
 	if got.PlatformType != "feishu" {
 		t.Fatalf("PlatformType = %q, want feishu", got.PlatformType)
 	}
+	if !got.BotPrepared {
+		t.Fatal("BotPrepared = false, want true after validating credentials")
+	}
 	if got.Project != "kimi-profile" {
 		t.Fatalf("Project = %q, want kimi-profile", got.Project)
 	}
@@ -144,12 +157,22 @@ func TestFeishuSetupWizardCollectsKimiBindConfig(t *testing.T) {
 }
 
 func TestFeishuSetupWizardDefaultsWorkspaceNextToConfig(t *testing.T) {
+	prevRegister := setupWizardRunRegistrationFlow
+	setupWizardRunRegistrationFlow = func(opts registrationFlowOptions) (*registrationFlowResult, error) {
+		return &registrationFlowResult{
+			AppID:       "cli_default",
+			AppSecret:   "sec_default",
+			OwnerOpenID: "ou_default_admin",
+			Platform:    "feishu",
+		}, nil
+	}
+	t.Cleanup(func() { setupWizardRunRegistrationFlow = prevRegister })
+
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	input := strings.NewReader(strings.Join([]string{
 		"",    // config file
 		"",    // bot setup mode
-		"",    // platform
 		"",    // local profile
 		"",    // agent
 		"",    // initial workspace
@@ -179,13 +202,26 @@ func TestFeishuSetupWizardDefaultsWorkspaceNextToConfig(t *testing.T) {
 	if got.WorkDir != filepath.Join(dir, defaultFeishuProject) {
 		t.Fatalf("WorkDir = %q, want default next to config", got.WorkDir)
 	}
+	if got.AdminOpenID != "ou_default_admin" {
+		t.Fatalf("AdminOpenID = %q, want owner open_id default", got.AdminOpenID)
+	}
 }
 
 func TestFeishuSetupWizardRendersCompactSections(t *testing.T) {
+	prevRegister := setupWizardRunRegistrationFlow
+	setupWizardRunRegistrationFlow = func(opts registrationFlowOptions) (*registrationFlowResult, error) {
+		return &registrationFlowResult{
+			AppID:       "cli_render",
+			AppSecret:   "sec_render",
+			OwnerOpenID: "ou_render_admin",
+			Platform:    "feishu",
+		}, nil
+	}
+	t.Cleanup(func() { setupWizardRunRegistrationFlow = prevRegister })
+
 	input := strings.NewReader(strings.Join([]string{
 		"",    // config file
 		"",    // bot setup mode
-		"",    // platform
 		"",    // local profile
 		"",    // agent
 		"",    // initial workspace
@@ -258,7 +294,7 @@ func TestFeishuSetupWizardTUIViewShowsShellLayout(t *testing.T) {
 		">  1 Config file",
 		"Config file",
 		"Where agentchat stores credentials",
-		"profile kimi-profile | agent kimi | mode connect_existing | service config_only",
+		"profile kimi-profile | agent kimi | mode connect_existing | bot pending | service config_only",
 		"enter select/next | esc back | q quit",
 	} {
 		if !strings.Contains(view, want) {
@@ -285,6 +321,157 @@ func TestFeishuSetupWizardTUIConnectModeShowsCredentialSteps(t *testing.T) {
 
 	if got := model.currentStep().ID; got != setupStepAppID {
 		t.Fatalf("current step = %v, want setupStepAppID", got)
+	}
+}
+
+func TestFeishuSetupWizardTUIPreparesScannedBotBeforeAdminStep(t *testing.T) {
+	prevRegister := setupWizardRunRegistrationFlow
+	setupWizardRunRegistrationFlow = func(opts registrationFlowOptions) (*registrationFlowResult, error) {
+		return &registrationFlowResult{
+			AppID:       "cli_scanned",
+			AppSecret:   "sec_scanned",
+			OwnerOpenID: "ou_real_admin",
+			Platform:    "feishu",
+		}, nil
+	}
+	t.Cleanup(func() { setupWizardRunRegistrationFlow = prevRegister })
+
+	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeNew,
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+	model.applyChoice(setupStepMode, "create")
+	if err := model.prepareBotIfReady(); err != nil {
+		t.Fatalf("prepareBotIfReady returned error: %v", err)
+	}
+
+	if !model.cfg.BotPrepared {
+		t.Fatal("BotPrepared = false, want true after QR onboarding")
+	}
+	if model.cfg.AppID != "cli_scanned" || model.cfg.AppSecret != "sec_scanned" {
+		t.Fatalf("credentials = (%q, %q), want scanned credentials", model.cfg.AppID, model.cfg.AppSecret)
+	}
+	if model.cfg.OwnerOpenID != "ou_real_admin" {
+		t.Fatalf("OwnerOpenID = %q, want real owner", model.cfg.OwnerOpenID)
+	}
+	if got := model.textValue(setupStepAdmin); got != "ou_real_admin" {
+		t.Fatalf("admin default = %q, want real owner open_id", got)
+	}
+	if got := model.currentStepIDs(); containsSetupStep(got, setupStepPlatform) || containsSetupStep(got, setupStepAppID) {
+		t.Fatalf("prepared scanned bot should skip credential/platform steps, got %v", got)
+	}
+}
+
+func TestFeishuSetupWizardTUISelectCreatePreparesBotAndAdvancesToProfile(t *testing.T) {
+	prevRegister := setupWizardRunRegistrationFlow
+	setupWizardRunRegistrationFlow = func(opts registrationFlowOptions) (*registrationFlowResult, error) {
+		return &registrationFlowResult{
+			AppID:       "cli_created",
+			AppSecret:   "sec_created",
+			OwnerOpenID: "ou_created_admin",
+			Platform:    "feishu",
+		}, nil
+	}
+	t.Cleanup(func() { setupWizardRunRegistrationFlow = prevRegister })
+
+	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeNew,
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+	model.stepIndex = 1
+	model.syncCurrentStep()
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	gotModel := next.(setupWizardTUIModel)
+
+	if got := gotModel.currentStep().ID; got != setupStepProject {
+		t.Fatalf("current step = %v, want setupStepProject", got)
+	}
+	if !gotModel.cfg.BotPrepared {
+		t.Fatal("BotPrepared = false, want true after selecting create")
+	}
+	if got := gotModel.textValue(setupStepAdmin); got != "ou_created_admin" {
+		t.Fatalf("admin default = %q, want real owner open_id", got)
+	}
+}
+
+func TestFeishuSetupWizardTUISwitchModeClearsAutoOwnerAdmin(t *testing.T) {
+	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeNew,
+		AppID:                  "cli_created",
+		AppSecret:              "sec_created",
+		BotPrepared:            true,
+		OwnerOpenID:            "ou_created_admin",
+		AdminOpenID:            "ou_created_admin",
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+
+	model.applyChoice(setupStepMode, "connect")
+
+	if model.cfg.BotPrepared {
+		t.Fatal("BotPrepared = true, want reset after switching mode")
+	}
+	if model.cfg.OwnerOpenID != "" || model.cfg.AdminOpenID != "" {
+		t.Fatalf("owner/admin = (%q, %q), want cleared auto owner admin", model.cfg.OwnerOpenID, model.cfg.AdminOpenID)
+	}
+	if model.cfg.AppID != "" || model.cfg.AppSecret != "" {
+		t.Fatalf("credentials = (%q, %q), want cleared QR credentials", model.cfg.AppID, model.cfg.AppSecret)
+	}
+}
+
+func TestFeishuSetupWizardTUIPreparesBoundBotBeforeAdminStep(t *testing.T) {
+	prevValidate := setupWizardValidateAppCredentials
+	setupWizardValidateAppCredentials = func(appID, appSecret, platformType string) (string, error) {
+		if appID != "cli_bound" || appSecret != "sec_bound" || platformType != "" {
+			t.Fatalf("validate args = (%q, %q, %q)", appID, appSecret, platformType)
+		}
+		return "lark", nil
+	}
+	t.Cleanup(func() { setupWizardValidateAppCredentials = prevValidate })
+
+	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeBind,
+		AppID:                  "cli_bound",
+		AppSecret:              "sec_bound",
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+	model.applyChoice(setupStepPlatform, "auto")
+	if err := model.prepareBotIfReady(); err != nil {
+		t.Fatalf("prepareBotIfReady returned error: %v", err)
+	}
+
+	if !model.cfg.BotPrepared {
+		t.Fatal("BotPrepared = false, want true after credential validation")
+	}
+	if model.cfg.PlatformType != "lark" {
+		t.Fatalf("PlatformType = %q, want detected lark", model.cfg.PlatformType)
+	}
+	if got := model.currentStepIDs(); containsSetupStep(got, setupStepAppID) || containsSetupStep(got, setupStepPlatform) {
+		t.Fatalf("prepared bound bot should skip credential/platform steps, got %v", got)
 	}
 }
 

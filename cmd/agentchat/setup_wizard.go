@@ -19,6 +19,8 @@ type feishuSetupWizardConfig struct {
 	PlatformType           string
 	AppID                  string
 	AppSecret              string
+	BotPrepared            bool
+	OwnerOpenID            string
 	AgentType              string
 	WorkDir                string
 	AdminOpenID            string
@@ -28,6 +30,9 @@ type feishuSetupWizardConfig struct {
 	ShareSessionInChannel  bool
 	EnableFeishuCard       bool
 	InstallAndStartService bool
+	TimeoutSeconds         int
+	QRImagePath            string
+	Debug                  bool
 }
 
 type setupChoice struct {
@@ -35,6 +40,11 @@ type setupChoice struct {
 	Label string
 	Hint  string
 }
+
+var (
+	setupWizardRunRegistrationFlow    = runRegistrationFlow
+	setupWizardValidateAppCredentials = validateAppCredentials
+)
 
 func shouldUseFeishuSetupWizard(force, disabled bool, argCount int) bool {
 	if force {
@@ -51,6 +61,62 @@ func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizar
 		return runFeishuSetupWizardTUI(in.(*os.File), out.(*os.File), defaults)
 	}
 	return runFeishuSetupWizardPlain(in, out, defaults)
+}
+
+func prepareFeishuSetupWizardBot(cfg *feishuSetupWizardConfig) error {
+	if cfg.BotPrepared {
+		return nil
+	}
+	switch cfg.Mode {
+	case feishuSetupModeNew:
+		result, err := setupWizardRunRegistrationFlow(registrationFlowOptions{
+			TimeoutSeconds: cfg.TimeoutSeconds,
+			QRImagePath:    cfg.QRImagePath,
+			Debug:          cfg.Debug,
+		})
+		if err != nil {
+			return fmt.Errorf("onboarding failed: %w", err)
+		}
+		if result == nil {
+			return fmt.Errorf("onboarding returned no result")
+		}
+		appID := strings.TrimSpace(result.AppID)
+		appSecret := strings.TrimSpace(result.AppSecret)
+		if appID == "" || appSecret == "" {
+			return fmt.Errorf("onboarding returned incomplete app credentials")
+		}
+		cfg.AppID = appID
+		cfg.AppSecret = appSecret
+		cfg.OwnerOpenID = strings.TrimSpace(result.OwnerOpenID)
+		if platform := strings.TrimSpace(result.Platform); platform != "" {
+			normalized, err := normalizeFeishuPlatformType(platform)
+			if err != nil {
+				return err
+			}
+			cfg.PlatformType = normalized
+		}
+		cfg.BotPrepared = true
+		return nil
+
+	case feishuSetupModeBind:
+		platformType, err := normalizeFeishuPlatformType(cfg.PlatformType)
+		if err != nil {
+			return err
+		}
+		detectedType, err := setupWizardValidateAppCredentials(cfg.AppID, cfg.AppSecret, platformType)
+		if err != nil {
+			return fmt.Errorf("app_id/app_secret validation failed: %w", err)
+		}
+		if platformType == "" {
+			platformType = detectedType
+		}
+		cfg.PlatformType = platformType
+		cfg.BotPrepared = true
+		return nil
+
+	default:
+		return nil
+	}
 }
 
 func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetupWizardConfig) (feishuSetupWizardConfig, error) {
@@ -98,24 +164,32 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 		cfg.Mode = feishuSetupModeNew
 		cfg.AppID = ""
 		cfg.AppSecret = ""
+		if err := prepareFeishuSetupWizardBot(&cfg); err != nil {
+			return cfg, err
+		}
 	}
 
-	platformDefault := strings.TrimSpace(cfg.PlatformType)
-	if platformDefault == "" {
-		platformDefault = "auto"
-	}
-	platform, err := promptChoice(reader, out, "Platform", []setupChoice{
-		{Key: "auto", Label: "Auto-detect", Hint: "validate credentials against both"},
-		{Key: "feishu", Label: "Feishu"},
-		{Key: "lark", Label: "Lark"},
-	}, platformDefault)
-	if err != nil {
-		return cfg, err
-	}
-	if platform == "auto" {
-		cfg.PlatformType = ""
-	} else {
-		cfg.PlatformType = platform
+	if !cfg.BotPrepared {
+		platformDefault := strings.TrimSpace(cfg.PlatformType)
+		if platformDefault == "" {
+			platformDefault = "auto"
+		}
+		platform, err := promptChoice(reader, out, "Platform", []setupChoice{
+			{Key: "auto", Label: "Auto-detect", Hint: "validate credentials against both"},
+			{Key: "feishu", Label: "Feishu"},
+			{Key: "lark", Label: "Lark"},
+		}, platformDefault)
+		if err != nil {
+			return cfg, err
+		}
+		if platform == "auto" {
+			cfg.PlatformType = ""
+		} else {
+			cfg.PlatformType = platform
+		}
+		if err := prepareFeishuSetupWizardBot(&cfg); err != nil {
+			return cfg, err
+		}
 	}
 
 	projectWasDefaulted := strings.TrimSpace(cfg.Project) == ""
@@ -151,7 +225,11 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 	}
 
 	printWizardSection(out, "Chat access", "The default binding model lets admins bind private chats and groups on first use.")
-	cfg.AdminOpenID, err = promptString(reader, out, "Admin open_id (blank = use creator open_id when QR setup returns it)", cfg.AdminOpenID)
+	adminDefault := cfg.AdminOpenID
+	if strings.TrimSpace(adminDefault) == "" && strings.TrimSpace(cfg.OwnerOpenID) != "" {
+		adminDefault = cfg.OwnerOpenID
+	}
+	cfg.AdminOpenID, err = promptString(reader, out, "Admin open_id (blank = use creator open_id when QR setup returns it)", adminDefault)
 	if err != nil {
 		return cfg, err
 	}

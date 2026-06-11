@@ -118,7 +118,7 @@ func newSetupWizardTUIModel(defaults feishuSetupWizardConfig) setupWizardTUIMode
 	if cfg.Mode == "" || cfg.Mode == feishuSetupModeAuto {
 		cfg.Mode = feishuSetupModeNew
 	}
-	if cfg.AppID != "" || cfg.AppSecret != "" {
+	if !cfg.BotPrepared && (cfg.AppID != "" || cfg.AppSecret != "") {
 		cfg.Mode = feishuSetupModeBind
 	}
 	if strings.TrimSpace(cfg.AgentType) == "" {
@@ -221,15 +221,15 @@ func (m setupWizardTUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if key == "y" && m.isBoolChoice(step.ID) {
-			m.cursor = 0
-			m.applyChoice(step.ID, choices[m.cursor].Key)
-			m.advance()
+			if err := m.chooseCurrentOption(step.ID, choices, 0); err != nil {
+				m.err = err.Error()
+			}
 			return m, nil
 		}
 		if key == "n" && m.isBoolChoice(step.ID) {
-			m.cursor = 1
-			m.applyChoice(step.ID, choices[m.cursor].Key)
-			m.advance()
+			if err := m.chooseCurrentOption(step.ID, choices, 1); err != nil {
+				m.err = err.Error()
+			}
 			return m, nil
 		}
 		if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
@@ -238,9 +238,9 @@ func (m setupWizardTUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				idx = 9
 			}
 			if idx >= 0 && idx < len(choices) {
-				m.cursor = idx
-				m.applyChoice(step.ID, choices[m.cursor].Key)
-				m.advance()
+				if err := m.chooseCurrentOption(step.ID, choices, idx); err != nil {
+					m.err = err.Error()
+				}
 				return m, nil
 			}
 		}
@@ -248,8 +248,9 @@ func (m setupWizardTUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(choices) == 0 {
 				return m, nil
 			}
-			m.applyChoice(step.ID, choices[m.cursor].Key)
-			m.advance()
+			if err := m.chooseCurrentOption(step.ID, choices, m.cursor); err != nil {
+				m.err = err.Error()
+			}
 			return m, nil
 		}
 
@@ -280,6 +281,30 @@ func (m setupWizardTUIModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *setupWizardTUIModel) chooseCurrentOption(stepID setupWizardStepID, choices []setupChoice, idx int) error {
+	if idx < 0 || idx >= len(choices) {
+		return nil
+	}
+	m.cursor = idx
+	m.applyChoice(stepID, choices[idx].Key)
+	if err := m.prepareBotAfterChoice(stepID); err != nil {
+		return err
+	}
+	m.err = ""
+	m.advanceAfterChoice(stepID)
+	return nil
+}
+
+func (m *setupWizardTUIModel) prepareBotAfterChoice(stepID setupWizardStepID) error {
+	if stepID == setupStepMode && m.cfg.Mode == feishuSetupModeNew {
+		return m.prepareBotIfReady()
+	}
+	if stepID == setupStepPlatform && m.cfg.Mode == feishuSetupModeBind {
+		return m.prepareBotIfReady()
+	}
+	return nil
+}
+
 func (m *setupWizardTUIModel) advance() {
 	if m.stepIndex >= len(m.steps())-1 {
 		m.done = true
@@ -287,6 +312,26 @@ func (m *setupWizardTUIModel) advance() {
 	}
 	m.stepIndex++
 	m.syncCurrentStep()
+}
+
+func (m *setupWizardTUIModel) advanceAfterChoice(stepID setupWizardStepID) {
+	if stepID == setupStepPlatform && m.cfg.BotPrepared {
+		if m.jumpToStep(setupStepProject) {
+			return
+		}
+	}
+	m.advance()
+}
+
+func (m *setupWizardTUIModel) jumpToStep(stepID setupWizardStepID) bool {
+	for i, step := range m.steps() {
+		if step.ID == stepID {
+			m.stepIndex = i
+			m.syncCurrentStep()
+			return true
+		}
+	}
+	return false
 }
 
 func (m *setupWizardTUIModel) syncCurrentStep() {
@@ -312,14 +357,14 @@ func (m setupWizardTUIModel) steps() []setupWizardStep {
 		{ID: setupStepConfig, Kind: setupStepText, Title: "Config file", Hint: "Where agentchat stores credentials and local profiles."},
 		{ID: setupStepMode, Kind: setupStepChoice, Title: "Bot setup mode", Hint: "Create a bot through QR onboarding or connect an existing app."},
 	}
-	if m.cfg.Mode == feishuSetupModeBind {
+	if !m.cfg.BotPrepared && m.cfg.Mode == feishuSetupModeBind {
 		steps = append(steps,
 			setupWizardStep{ID: setupStepAppID, Kind: setupStepText, Title: "App ID", Hint: "Feishu/Lark app_id, for example cli_xxx."},
 			setupWizardStep{ID: setupStepAppSecret, Kind: setupStepText, Title: "App Secret", Hint: "Feishu/Lark app_secret. Input is masked."},
+			setupWizardStep{ID: setupStepPlatform, Kind: setupStepChoice, Title: "Platform", Hint: "Auto-detect validates credentials against both Feishu and Lark."},
 		)
 	}
 	steps = append(steps,
-		setupWizardStep{ID: setupStepPlatform, Kind: setupStepChoice, Title: "Platform", Hint: "Auto-detect validates credentials against both Feishu and Lark."},
 		setupWizardStep{ID: setupStepProject, Kind: setupStepText, Title: "Local profile", Hint: "A local bot profile name in config.toml."},
 		setupWizardStep{ID: setupStepAgent, Kind: setupStepChoice, Title: "Agent", Hint: "Which local agent CLI should receive messages."},
 		setupWizardStep{ID: setupStepWorkDir, Kind: setupStepText, Title: "Workspace", Hint: "Initial directory for the local agent."},
@@ -337,6 +382,24 @@ func (m setupWizardTUIModel) steps() []setupWizardStep {
 
 func (m setupWizardTUIModel) currentStep() setupWizardStep {
 	return m.steps()[m.stepIndex]
+}
+
+func (m setupWizardTUIModel) currentStepIDs() []setupWizardStepID {
+	steps := m.steps()
+	ids := make([]setupWizardStepID, 0, len(steps))
+	for _, step := range steps {
+		ids = append(ids, step.ID)
+	}
+	return ids
+}
+
+func containsSetupStep(ids []setupWizardStepID, target setupWizardStepID) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }
 
 func (m setupWizardTUIModel) renderSidebar(width int, steps []setupWizardStep) string {
@@ -472,6 +535,7 @@ func (m setupWizardTUIModel) renderSummaryStep(width int) []string {
 		"",
 		setupTUIAccentSoftStyle.Render("Access"),
 		m.summaryLine("Admin", formatSetupWizardAdmin(m.cfg.AdminOpenID)),
+		m.summaryLine("Creator open_id", formatSetupWizardOptional(m.cfg.OwnerOpenID)),
 		m.summaryLine("Auto-bind", formatWizardBool(m.cfg.AutoBindChats)),
 		m.summaryLine("Group trigger", formatSetupWizardGroupTrigger(m.cfg.GroupReplyAll)),
 		m.summaryLine("History context", formatWizardBool(m.cfg.GroupContextBuffer)),
@@ -497,10 +561,11 @@ func (m setupWizardTUIModel) renderSummaryStep(width int) []string {
 func (m setupWizardTUIModel) renderStatus(width int) string {
 	step := m.currentStep()
 	status := fmt.Sprintf(
-		"profile %s | agent %s | mode %s | service %s",
+		"profile %s | agent %s | mode %s | bot %s | service %s",
 		emptyAs(m.cfg.Project, defaultFeishuProject),
 		emptyAs(m.cfg.AgentType, "codex"),
 		formatSetupWizardMode(m.cfg.Mode),
+		formatSetupWizardBotPrepared(m.cfg.BotPrepared),
 		formatSetupWizardService(m.cfg.InstallAndStartService),
 	)
 	if step.ID == setupStepSummary {
@@ -533,6 +598,9 @@ func (m setupWizardTUIModel) textValue(stepID setupWizardStepID) string {
 		}
 		return m.cfg.WorkDir
 	case setupStepAdmin:
+		if strings.TrimSpace(m.cfg.AdminOpenID) == "" && strings.TrimSpace(m.cfg.OwnerOpenID) != "" {
+			return m.cfg.OwnerOpenID
+		}
 		return m.cfg.AdminOpenID
 	default:
 		return ""
@@ -599,6 +667,23 @@ func (m *setupWizardTUIModel) commitTextStep(stepID setupWizardStepID) error {
 		m.cfg.AdminOpenID = value
 	}
 	return nil
+}
+
+func (m *setupWizardTUIModel) prepareBotIfReady() error {
+	return prepareFeishuSetupWizardBot(&m.cfg)
+}
+
+func (m *setupWizardTUIModel) resetPreparedBot(clearCredentials bool) {
+	previousOwner := strings.TrimSpace(m.cfg.OwnerOpenID)
+	if previousOwner != "" && strings.TrimSpace(m.cfg.AdminOpenID) == previousOwner {
+		m.cfg.AdminOpenID = ""
+	}
+	if clearCredentials {
+		m.cfg.AppID = ""
+		m.cfg.AppSecret = ""
+	}
+	m.cfg.BotPrepared = false
+	m.cfg.OwnerOpenID = ""
 }
 
 func (m *setupWizardTUIModel) handleTextInput(msg tea.KeyMsg) {
@@ -729,12 +814,12 @@ func (m *setupWizardTUIModel) applyChoice(stepID setupWizardStepID, key string) 
 	switch stepID {
 	case setupStepMode:
 		if key == "connect" {
+			m.resetPreparedBot(m.cfg.Mode != feishuSetupModeBind)
 			m.cfg.Mode = feishuSetupModeBind
 			return
 		}
 		m.cfg.Mode = feishuSetupModeNew
-		m.cfg.AppID = ""
-		m.cfg.AppSecret = ""
+		m.resetPreparedBot(true)
 	case setupStepPlatform:
 		if key == "auto" {
 			m.cfg.PlatformType = ""
@@ -786,6 +871,20 @@ func formatSetupWizardAdmin(admin string) string {
 		return "creator_open_id"
 	}
 	return admin
+}
+
+func formatSetupWizardOptional(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "-"
+	}
+	return value
+}
+
+func formatSetupWizardBotPrepared(prepared bool) string {
+	if prepared {
+		return "ready"
+	}
+	return "pending"
 }
 
 func formatSetupWizardGroupTrigger(replyAll bool) string {

@@ -196,6 +196,8 @@ func runFeishuSetup(args []string, requestedMode string) {
 
 	initConfigPath(configFileValue)
 	useWizard := shouldUseFeishuSetupWizard(*wizard, *noWizard, len(args))
+	wizardBotPrepared := false
+	wizardOwnerOpenID := ""
 	if useWizard {
 		defaults := feishuSetupWizardConfig{
 			ConfigPath:             config.ConfigPath,
@@ -213,6 +215,9 @@ func runFeishuSetup(args []string, requestedMode string) {
 			ShareSessionInChannel:  shareSessionInChannelValue,
 			EnableFeishuCard:       enableFeishuCardValue,
 			InstallAndStartService: !noStartValue,
+			TimeoutSeconds:         *timeout,
+			QRImagePath:            *qrImage,
+			Debug:                  *debug,
 		}
 		if appIDValue != "" || appSecretValue != "" || appValue != "" {
 			defaults.Mode = feishuSetupModeBind
@@ -247,17 +252,31 @@ func runFeishuSetup(args []string, requestedMode string) {
 		groupContextBufferValue = wizardResult.GroupContextBuffer
 		shareSessionInChannelValue = wizardResult.ShareSessionInChannel
 		enableFeishuCardValue = wizardResult.EnableFeishuCard
+		wizardBotPrepared = wizardResult.BotPrepared
+		wizardOwnerOpenID = strings.TrimSpace(wizardResult.OwnerOpenID)
 	}
 
-	effectiveMode, resolvedAppID, resolvedAppSecret, err := resolveFeishuSetupInputs(
-		setupMode,
-		appValue,
-		appIDValue,
-		appSecretValue,
-	)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	var effectiveMode, resolvedAppID, resolvedAppSecret string
+	var err error
+	if wizardBotPrepared {
+		effectiveMode = feishuSetupModeBind
+		resolvedAppID = strings.TrimSpace(appIDValue)
+		resolvedAppSecret = strings.TrimSpace(appSecretValue)
+		if resolvedAppID == "" || resolvedAppSecret == "" {
+			fmt.Fprintln(os.Stderr, "Error: setup wizard prepared a bot but returned incomplete app credentials")
+			os.Exit(1)
+		}
+	} else {
+		effectiveMode, resolvedAppID, resolvedAppSecret, err = resolveFeishuSetupInputs(
+			setupMode,
+			appValue,
+			appIDValue,
+			appSecretValue,
+		)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	targetProject, err := resolveTargetProject(projectValue)
@@ -275,39 +294,43 @@ func runFeishuSetup(args []string, requestedMode string) {
 	finalPlatformType := normalizedType
 	var ownerOpenID string
 
-	switch effectiveMode {
-	case feishuSetupModeBind:
-		detectedType, err := validateAppCredentials(resolvedAppID, resolvedAppSecret, normalizedType)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: app_id/app_secret validation failed: %v\n", err)
+	if wizardBotPrepared {
+		ownerOpenID = wizardOwnerOpenID
+	} else {
+		switch effectiveMode {
+		case feishuSetupModeBind:
+			detectedType, err := validateAppCredentials(resolvedAppID, resolvedAppSecret, normalizedType)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: app_id/app_secret validation failed: %v\n", err)
+				os.Exit(1)
+			}
+			if finalPlatformType == "" {
+				finalPlatformType = detectedType
+			}
+			fmt.Printf("Credentials verified for app_id %s.\n", resolvedAppID)
+
+		case feishuSetupModeNew:
+			result, err := runRegistrationFlow(registrationFlowOptions{
+				TimeoutSeconds: *timeout,
+				QRImagePath:    *qrImage,
+				Debug:          *debug,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: onboarding failed: %v\n", err)
+				fmt.Fprintln(os.Stderr, "Tip: you can bind an existing bot with `agentchat feishu bind --app app_id:app_secret`")
+				os.Exit(1)
+			}
+			resolvedAppID = result.AppID
+			resolvedAppSecret = result.AppSecret
+			ownerOpenID = result.OwnerOpenID
+			if finalPlatformType == "" {
+				finalPlatformType = result.Platform
+			}
+
+		default:
+			fmt.Fprintf(os.Stderr, "Error: unsupported mode %q\n", effectiveMode)
 			os.Exit(1)
 		}
-		if finalPlatformType == "" {
-			finalPlatformType = detectedType
-		}
-		fmt.Printf("Credentials verified for app_id %s.\n", resolvedAppID)
-
-	case feishuSetupModeNew:
-		result, err := runRegistrationFlow(registrationFlowOptions{
-			TimeoutSeconds: *timeout,
-			QRImagePath:    *qrImage,
-			Debug:          *debug,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: onboarding failed: %v\n", err)
-			fmt.Fprintln(os.Stderr, "Tip: you can bind an existing bot with `agentchat feishu bind --app app_id:app_secret`")
-			os.Exit(1)
-		}
-		resolvedAppID = result.AppID
-		resolvedAppSecret = result.AppSecret
-		ownerOpenID = result.OwnerOpenID
-		if finalPlatformType == "" {
-			finalPlatformType = result.Platform
-		}
-
-	default:
-		fmt.Fprintf(os.Stderr, "Error: unsupported mode %q\n", effectiveMode)
-		os.Exit(1)
 	}
 
 	provisionType := finalPlatformType
@@ -320,7 +343,7 @@ func runFeishuSetup(args []string, requestedMode string) {
 		botOpenID = fetchBotOpenIDForSetup(resolvedAppID, resolvedAppSecret, provisionType)
 		ownerOpenIDForConfig = setupOwnerOpenIDForConfig(ownerOpenID, botOpenID)
 	}
-	if adminOpenIDValue != "" {
+	if adminOpenIDValue != "" && (ownerOpenID == "" || adminOpenIDValue != ownerOpenID) {
 		ownerOpenIDForConfig = adminOpenIDValue
 	}
 	workDir := workDirValue
