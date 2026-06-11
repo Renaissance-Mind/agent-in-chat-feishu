@@ -33,6 +33,7 @@ type feishuSetupWizardConfig struct {
 type setupChoice struct {
 	Key   string
 	Label string
+	Hint  string
 }
 
 func shouldUseFeishuSetupWizard(force, disabled bool, argCount int) bool {
@@ -55,24 +56,23 @@ func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizar
 	reader := bufio.NewReader(in)
 	cfg := defaults
 
-	fmt.Fprintln(out, "Agent-in-Chat-Feishu Setup")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "This wizard will create or connect a Feishu/Lark bot, configure a local agent, and optionally start agentchat in the background.")
-	fmt.Fprintln(out)
+	printWizardIntro(out)
 
 	var err error
+	printWizardSection(out, "Config", "Store credentials and local profile settings.")
 	cfg.ConfigPath, err = promptString(reader, out, "Config file", cfg.ConfigPath)
 	if err != nil {
 		return cfg, err
 	}
 
+	printWizardSection(out, "Bot", "Create a bot by QR onboarding or connect an existing Feishu/Lark app.")
 	modeDefault := "create"
 	if cfg.Mode == feishuSetupModeBind || cfg.AppID != "" || cfg.AppSecret != "" {
 		modeDefault = "connect"
 	}
 	mode, err := promptChoice(reader, out, "Bot setup mode", []setupChoice{
-		{Key: "create", Label: "Create a new bot by QR code"},
-		{Key: "connect", Label: "Connect an existing bot with app_id/app_secret"},
+		{Key: "create", Label: "Create a new bot by QR code", Hint: "best for first-time setup"},
+		{Key: "connect", Label: "Connect an existing bot", Hint: "use app_id and app_secret"},
 	}, modeDefault)
 	if err != nil {
 		return cfg, err
@@ -98,7 +98,7 @@ func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizar
 		platformDefault = "auto"
 	}
 	platform, err := promptChoice(reader, out, "Platform", []setupChoice{
-		{Key: "auto", Label: "Auto-detect"},
+		{Key: "auto", Label: "Auto-detect", Hint: "validate credentials against both"},
 		{Key: "feishu", Label: "Feishu"},
 		{Key: "lark", Label: "Lark"},
 	}, platformDefault)
@@ -115,6 +115,7 @@ func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizar
 	if projectWasDefaulted {
 		cfg.Project = defaultFeishuProject
 	}
+	printWizardSection(out, "Local agent", "Choose the profile name, agent CLI, and starting workspace.")
 	cfg.Project, err = promptString(reader, out, "Local bot profile name", cfg.Project)
 	if err != nil {
 		return cfg, err
@@ -142,6 +143,7 @@ func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizar
 		return cfg, err
 	}
 
+	printWizardSection(out, "Chat access", "The default binding model lets admins bind private chats and groups on first use.")
 	cfg.AdminOpenID, err = promptString(reader, out, "Admin open_id (blank = use creator open_id when QR setup returns it)", cfg.AdminOpenID)
 	if err != nil {
 		return cfg, err
@@ -152,13 +154,14 @@ func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizar
 		return cfg, err
 	}
 
+	printWizardSection(out, "Group behavior", "Tune when the bot replies and how much group context is sent to the agent.")
 	groupDefault := "mention"
 	if cfg.GroupReplyAll {
 		groupDefault = "all"
 	}
 	groupMode, err := promptChoice(reader, out, "Group trigger mode", []setupChoice{
-		{Key: "mention", Label: "Only respond when mentioned"},
-		{Key: "all", Label: "Respond to every group message"},
+		{Key: "mention", Label: "Only respond when mentioned", Hint: "recommended"},
+		{Key: "all", Label: "Respond to every group message", Hint: "busy groups can get noisy"},
 	}, groupDefault)
 	if err != nil {
 		return cfg, err
@@ -177,6 +180,7 @@ func runFeishuSetupWizard(in io.Reader, out io.Writer, defaults feishuSetupWizar
 	if err != nil {
 		return cfg, err
 	}
+	printWizardSection(out, "Runtime", "Start the daemon now, or write config only and run it manually.")
 	cfg.InstallAndStartService, err = promptBool(reader, out, "Install and start background service", cfg.InstallAndStartService)
 	if err != nil {
 		return cfg, err
@@ -199,12 +203,12 @@ func setupAgentChoices() []setupChoice {
 		registered[strings.ToLower(strings.TrimSpace(name))] = true
 	}
 	preferred := []setupChoice{
-		{Key: "codex", Label: "Codex (recommended)"},
+		{Key: "codex", Label: "Codex", Hint: "recommended default"},
 		{Key: "claudecode", Label: "Claude Code"},
 		{Key: "gemini", Label: "Gemini"},
 		{Key: "cursor", Label: "Cursor"},
 		{Key: "opencode", Label: "OpenCode"},
-		{Key: "kimi", Label: "Kimi CLI"},
+		{Key: "kimi", Label: "Kimi CLI", Hint: "Moonshot/Kimi"},
 		{Key: "iflow", Label: "iFlow"},
 		{Key: "qoder", Label: "Qoder"},
 		{Key: "pi", Label: "Pi"},
@@ -230,17 +234,33 @@ func setupAgentChoices() []setupChoice {
 		choices = append(choices, setupChoice{Key: name, Label: name})
 	}
 	if len(choices) == 0 {
-		choices = append(choices, setupChoice{Key: "codex", Label: "Codex (recommended)"})
+		choices = append(choices, setupChoice{Key: "codex", Label: "Codex", Hint: "recommended default"})
 	}
 	return choices
 }
 
-func promptString(reader *bufio.Reader, out io.Writer, label, defaultValue string) (string, error) {
-	fmt.Fprintf(out, "? %s\n", label)
-	if defaultValue != "" {
-		fmt.Fprintf(out, "  Default: %s\n", defaultValue)
+func printWizardIntro(out io.Writer) {
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Agent-in-Chat-Feishu setup")
+	fmt.Fprintln(out, "Configure Feishu/Lark, local agent profile, chat access, and service startup.")
+	fmt.Fprintln(out)
+}
+
+func printWizardSection(out io.Writer, title, hint string) {
+	fmt.Fprintf(out, "%s\n", title)
+	if strings.TrimSpace(hint) != "" {
+		fmt.Fprintf(out, "  %s\n", hint)
 	}
-	fmt.Fprint(out, "  > ")
+	fmt.Fprintln(out)
+}
+
+func promptString(reader *bufio.Reader, out io.Writer, label, defaultValue string) (string, error) {
+	if defaultValue != "" {
+		fmt.Fprintf(out, "%s [%s]\n", label, defaultValue)
+	} else {
+		fmt.Fprintf(out, "%s\n", label)
+	}
+	fmt.Fprint(out, "> ")
 	line, err := reader.ReadString('\n')
 	if err != nil && err != io.EOF {
 		return "", err
@@ -262,16 +282,20 @@ func promptChoice(reader *bufio.Reader, out io.Writer, label string, choices []s
 		defaultKey = choices[0].Key
 	}
 	for {
-		fmt.Fprintf(out, "? %s\n", label)
+		fmt.Fprintf(out, "%s\n", label)
 		for i, choice := range choices {
 			prefix := " "
 			if choice.Key == defaultKey {
 				prefix = "*"
 			}
-			fmt.Fprintf(out, "  %s %d. %s\n", prefix, i+1, choice.Label)
+			fmt.Fprintf(out, "  %s %d) %s", prefix, i+1, choice.Label)
+			if strings.TrimSpace(choice.Hint) != "" {
+				fmt.Fprintf(out, " - %s", choice.Hint)
+			}
+			fmt.Fprintln(out)
 		}
-		fmt.Fprintf(out, "  Default: %s\n", defaultKey)
-		fmt.Fprint(out, "  > ")
+		fmt.Fprintf(out, "Select [%s]\n", defaultKey)
+		fmt.Fprint(out, "> ")
 		line, err := reader.ReadString('\n')
 		if err != nil && err != io.EOF {
 			return "", err
@@ -286,7 +310,7 @@ func promptChoice(reader *bufio.Reader, out io.Writer, label string, choices []s
 				return choice.Key, nil
 			}
 		}
-		fmt.Fprintf(out, "Please enter one of: %s\n\n", strings.Join(choiceKeys(choices), ", "))
+		fmt.Fprintf(out, "Enter one of: %s\n\n", strings.Join(choiceKeys(choices), ", "))
 	}
 }
 
@@ -296,8 +320,8 @@ func promptBool(reader *bufio.Reader, out io.Writer, label string, defaultValue 
 		defaultText = "y/N"
 	}
 	for {
-		fmt.Fprintf(out, "? %s [%s]\n", label, defaultText)
-		fmt.Fprint(out, "  > ")
+		fmt.Fprintf(out, "%s [%s]\n", label, defaultText)
+		fmt.Fprint(out, "> ")
 		line, err := reader.ReadString('\n')
 		if err != nil && err != io.EOF {
 			return false, err
@@ -312,7 +336,7 @@ func promptBool(reader *bufio.Reader, out io.Writer, label string, defaultValue 
 		case "n", "no", "false", "0":
 			return false, nil
 		default:
-			fmt.Fprintln(out, "Please enter yes or no.")
+			fmt.Fprintln(out, "Enter yes or no.")
 		}
 	}
 }
@@ -347,25 +371,35 @@ func printFeishuSetupWizardSummary(out io.Writer, cfg feishuSetupWizardConfig) {
 		trigger = "all_messages"
 	}
 
-	fmt.Fprintln(out, "Setup Summary")
+	printWizardSection(out, "Summary", "Review before writing config.")
+	printSummaryField(out, "Config file", cfg.ConfigPath)
+	printSummaryField(out, "Bot setup mode", mode)
+	printSummaryField(out, "Platform", platform)
+	printSummaryField(out, "Local profile", cfg.Project)
+	printSummaryField(out, "Agent", cfg.AgentType)
+	printSummaryField(out, "Initial workspace", cfg.WorkDir)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Config file:              %s\n", cfg.ConfigPath)
-	fmt.Fprintf(out, "Bot setup mode:           %s\n", mode)
-	fmt.Fprintf(out, "Platform:                 %s\n", platform)
-	fmt.Fprintf(out, "Local profile:            %s\n", cfg.Project)
-	fmt.Fprintf(out, "Agent:                    %s\n", cfg.AgentType)
-	fmt.Fprintf(out, "Initial workspace:        %s\n", cfg.WorkDir)
+	printSummaryField(out, "Access mode", "chat_binding")
+	printSummaryField(out, "Admin open_id", admin)
+	printSummaryField(out, "Auto-bind chats", formatWizardBool(cfg.AutoBindChats))
+	printSummaryField(out, "Private chat binding", `allow_private_chats = ""`)
+	printSummaryField(out, "Group chat binding", `allow_group_chats = ""`)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Access mode:              chat_binding\n")
-	fmt.Fprintf(out, "Admin open_id:            %s\n", admin)
-	fmt.Fprintf(out, "Auto-bind chats:          %t\n", cfg.AutoBindChats)
-	fmt.Fprintf(out, "Private chat binding:     allow_private_chats = \"\"\n")
-	fmt.Fprintf(out, "Group chat binding:       allow_group_chats = \"\"\n")
+	printSummaryField(out, "Group trigger", trigger)
+	printSummaryField(out, "Group history context", formatWizardBool(cfg.GroupContextBuffer))
+	printSummaryField(out, "Shared group session", formatWizardBool(cfg.ShareSessionInChannel))
+	printSummaryField(out, "Progress cards", formatWizardBool(cfg.EnableFeishuCard))
+	printSummaryField(out, "Background service", service)
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "Group trigger:            %s\n", trigger)
-	fmt.Fprintf(out, "Group history context:    %t\n", cfg.GroupContextBuffer)
-	fmt.Fprintf(out, "Shared group session:     %t\n", cfg.ShareSessionInChannel)
-	fmt.Fprintf(out, "Progress cards:           %t\n", cfg.EnableFeishuCard)
-	fmt.Fprintf(out, "Background service:       %s\n", service)
-	fmt.Fprintln(out)
+}
+
+func printSummaryField(out io.Writer, label, value string) {
+	fmt.Fprintf(out, "  %-24s %s\n", label, value)
+}
+
+func formatWizardBool(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
 }

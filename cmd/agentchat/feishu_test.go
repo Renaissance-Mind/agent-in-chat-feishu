@@ -181,6 +181,61 @@ func TestFeishuSetupWizardDefaultsWorkspaceNextToConfig(t *testing.T) {
 	}
 }
 
+func TestFeishuSetupWizardRendersCompactSections(t *testing.T) {
+	input := strings.NewReader(strings.Join([]string{
+		"",    // config file
+		"",    // bot setup mode
+		"",    // platform
+		"",    // local profile
+		"",    // agent
+		"",    // initial workspace
+		"",    // admin open_id
+		"",    // auto-bind chats
+		"",    // group trigger mode
+		"",    // include group history
+		"",    // share group session
+		"",    // progress cards
+		"no",  // install/start service
+		"yes", // confirm
+	}, "\n") + "\n")
+	var out strings.Builder
+
+	_, err := runFeishuSetupWizard(input, &out, feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeNew,
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+	if err != nil {
+		t.Fatalf("runFeishuSetupWizard returned error: %v", err)
+	}
+	text := out.String()
+	for _, want := range []string{
+		"Agent-in-Chat-Feishu setup",
+		"Config\n  Store credentials",
+		"Bot\n  Create a bot",
+		"Local agent\n  Choose the profile",
+		"Chat access\n  The default binding model",
+		"Group behavior\n  Tune when the bot replies",
+		"Runtime\n  Start the daemon now",
+		"Summary\n  Review before writing config",
+		"Select [create]",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("wizard output missing %q:\n%s", want, text)
+		}
+	}
+	for _, oldMarker := range []string{"? ", "Default:"} {
+		if strings.Contains(text, oldMarker) {
+			t.Fatalf("wizard output still contains old marker %q:\n%s", oldMarker, text)
+		}
+	}
+}
+
 func TestResolveTargetProjectDefaultsToFeishu(t *testing.T) {
 	dir := t.TempDir()
 	prev := config.ConfigPath
