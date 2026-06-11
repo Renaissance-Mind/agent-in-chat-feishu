@@ -29,8 +29,7 @@ const (
 	setupStepAgent
 	setupStepWorkDir
 	setupStepAdmin
-	setupStepAutoBind
-	setupStepGroupMode
+	setupStepAccessPreset
 	setupStepGroupContext
 	setupStepService
 	setupStepSummary
@@ -142,6 +141,8 @@ func newSetupWizardTUIModel(defaults feishuSetupWizardConfig) setupWizardTUIMode
 	if strings.TrimSpace(cfg.AgentType) == "" {
 		cfg.AgentType = "codex"
 	}
+	cfg.AccessPreset = normalizeFeishuSetupAccessPreset(cfg.AccessPreset)
+	applyFeishuSetupAccessPreset(&cfg)
 	projectDefaulted := strings.TrimSpace(cfg.Project) == ""
 	if projectDefaulted {
 		cfg.Project = defaultFeishuProject
@@ -426,9 +427,8 @@ func (m setupWizardTUIModel) steps() []setupWizardStep {
 		setupWizardStep{ID: setupStepProject, Kind: setupStepText, Title: "本地配置名 / Local profile", Hint: "config.toml 里的本地机器人配置名。 / A local bot profile name in config.toml."},
 		setupWizardStep{ID: setupStepAgent, Kind: setupStepChoice, Title: "Agent 类型 / Agent", Hint: "接收消息的本地 Agent CLI。 / Which local agent CLI should receive messages."},
 		setupWizardStep{ID: setupStepWorkDir, Kind: setupStepText, Title: "工作目录 / Workspace", Hint: "本地 Agent 的初始目录。 / Initial directory for the local agent."},
-		setupWizardStep{ID: setupStepAdmin, Kind: setupStepText, Title: "管理员 open_id / Admin open_id", Hint: "留空时使用扫码创建者。 / Blank keeps QR creator auto-detection when available."},
-		setupWizardStep{ID: setupStepAutoBind, Kind: setupStepChoice, Title: "自动绑定会话 / Auto-bind chats", Hint: "管理员首次使用时可绑定私聊或群聊。 / Admins can bind private chats and groups on first use."},
-		setupWizardStep{ID: setupStepGroupMode, Kind: setupStepChoice, Title: "群聊触发 / Group trigger", Hint: "仅 @ 回复适合大多数群聊。 / Mention-only is quieter and safer for busy groups."},
+		setupWizardStep{ID: setupStepAdmin, Kind: setupStepText, Title: "管理员 open_id / Admin open_id", Hint: "默认使用扫码创建者；连接已有应用时可手动填。 / Defaults to QR creator; enter manually for existing apps if needed."},
+		setupWizardStep{ID: setupStepAccessPreset, Kind: setupStepChoice, Title: "权限方案 / Access plan", Hint: "选择机器人回复谁；群聊始终通过 @ 触发。 / Choose who the bot replies to; groups always trigger on mention."},
 		setupWizardStep{ID: setupStepGroupContext, Kind: setupStepChoice, Title: "群聊上下文 / Group history context", Hint: "把近期非 @ 消息作为背景上下文。 / Include recent non-mention messages as background context."},
 		setupWizardStep{ID: setupStepService, Kind: setupStepChoice, Title: "后台服务 / Background service", Hint: "写入配置后安装并启动 daemon。 / Install and start the daemon after writing config."},
 		setupWizardStep{ID: setupStepSummary, Kind: setupStepSummaryKind, Title: "摘要 / Summary", Hint: "确认并写入配置。 / Review and write config."},
@@ -608,8 +608,9 @@ func (m setupWizardTUIModel) renderSummaryStep(width int) []string {
 		setupTUIAccentSoftStyle.Render("访问 / Access"),
 		m.summaryLine("管理员 / Admin", formatSetupWizardAdmin(m.cfg.AdminOpenID)),
 		m.summaryLine("创建者 / Creator", formatSetupWizardOptional(m.cfg.OwnerOpenID)),
+		m.summaryLine("权限方案 / Access", formatFeishuSetupAccessPreset(m.cfg.AccessPreset)),
 		m.summaryLine("自动绑定 / Auto-bind", formatWizardBool(m.cfg.AutoBindChats)),
-		m.summaryLine("群聊触发 / Trigger", formatSetupWizardGroupTrigger(m.cfg.GroupReplyAll)),
+		m.summaryLine("群聊触发 / Trigger", "仅 @ / mention_only"),
 		m.summaryLine("群聊上下文 / Context", formatWizardBool(m.cfg.GroupContextBuffer)),
 		m.summaryLine("后台服务 / Service", formatSetupWizardService(m.cfg.InstallAndStartService)),
 		"",
@@ -737,6 +738,9 @@ func (m *setupWizardTUIModel) commitTextStep(stepID setupWizardStepID) error {
 		}
 		m.cfg.WorkDir = value
 	case setupStepAdmin:
+		if value == "" && strings.TrimSpace(m.cfg.OwnerOpenID) == "" {
+			return fmt.Errorf("admin open_id is required when the app creator cannot be detected")
+		}
 		m.cfg.AdminOpenID = value
 	}
 	return nil
@@ -823,15 +827,12 @@ func (m setupWizardTUIModel) currentChoices(stepID setupWizardStepID) []setupCho
 		}
 	case setupStepAgent:
 		return setupAgentChoices()
-	case setupStepAutoBind, setupStepGroupContext, setupStepService:
+	case setupStepAccessPreset:
+		return feishuSetupAccessPresetChoices()
+	case setupStepGroupContext, setupStepService:
 		return []setupChoice{
 			{Key: "yes", Label: "是 / Yes"},
 			{Key: "no", Label: "否 / No"},
-		}
-	case setupStepGroupMode:
-		return []setupChoice{
-			{Key: "mention", Label: "仅 @ 时回复 / Mention only", Hint: "推荐 / recommended"},
-			{Key: "all", Label: "每条群消息 / Every group message", Hint: "较吵 / noisy"},
 		}
 	default:
 		return nil
@@ -863,13 +864,8 @@ func (m setupWizardTUIModel) selectedChoiceKey(stepID setupWizardStepID) string 
 		return m.cfg.PlatformType
 	case setupStepAgent:
 		return emptyAs(m.cfg.AgentType, "codex")
-	case setupStepAutoBind:
-		return boolChoiceKey(m.cfg.AutoBindChats)
-	case setupStepGroupMode:
-		if m.cfg.GroupReplyAll {
-			return "all"
-		}
-		return "mention"
+	case setupStepAccessPreset:
+		return normalizeFeishuSetupAccessPreset(m.cfg.AccessPreset)
 	case setupStepGroupContext:
 		return boolChoiceKey(m.cfg.GroupContextBuffer)
 	case setupStepService:
@@ -897,10 +893,9 @@ func (m *setupWizardTUIModel) applyChoice(stepID setupWizardStepID, key string) 
 		m.cfg.PlatformType = key
 	case setupStepAgent:
 		m.cfg.AgentType = key
-	case setupStepAutoBind:
-		m.cfg.AutoBindChats = key == "yes"
-	case setupStepGroupMode:
-		m.cfg.GroupReplyAll = key == "all"
+	case setupStepAccessPreset:
+		m.cfg.AccessPreset = key
+		applyFeishuSetupAccessPreset(&m.cfg)
 	case setupStepGroupContext:
 		m.cfg.GroupContextBuffer = key == "yes"
 	case setupStepService:
@@ -910,7 +905,7 @@ func (m *setupWizardTUIModel) applyChoice(stepID setupWizardStepID, key string) 
 
 func (m setupWizardTUIModel) isBoolChoice(stepID setupWizardStepID) bool {
 	switch stepID {
-	case setupStepAutoBind, setupStepGroupContext, setupStepService:
+	case setupStepGroupContext, setupStepService:
 		return true
 	default:
 		return false
@@ -950,13 +945,6 @@ func formatSetupWizardBotPrepared(prepared bool) string {
 		return "已准备 / ready"
 	}
 	return "未完成 / pending"
-}
-
-func formatSetupWizardGroupTrigger(replyAll bool) string {
-	if replyAll {
-		return "每条消息 / all_messages"
-	}
-	return "仅 @ / mention_only"
 }
 
 func formatSetupWizardService(install bool) string {

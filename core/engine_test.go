@@ -84,6 +84,26 @@ func (p *stubPlatformEngine) clearSent() {
 	p.mu.Unlock()
 }
 
+type stubGroupModePlatform struct {
+	stubPlatformEngine
+	currentMode string
+	setMode     string
+}
+
+func (p *stubGroupModePlatform) SetGroupMode(_ context.Context, _ any, sessionKey, userID, mode string) (GroupModeResult, error) {
+	p.setMode = mode
+	p.currentMode = mode
+	return GroupModeResult{ChatID: extractChannelID(sessionKey), Mode: mode}, nil
+}
+
+func (p *stubGroupModePlatform) CurrentGroupMode(_ context.Context, _ any, sessionKey string) (GroupModeResult, error) {
+	mode := p.currentMode
+	if mode == "" {
+		mode = "admin"
+	}
+	return GroupModeResult{ChatID: extractChannelID(sessionKey), Mode: mode}, nil
+}
+
 type stubCronReplyTargetPlatform struct {
 	stubPlatformEngine
 	reconstructSessionKey string
@@ -1797,6 +1817,57 @@ func TestEngine_AdminFrom_AdminCanRunShell(t *testing.T) {
 		if strings.Contains(s, "admin") {
 			t.Errorf("admin user should not be blocked, got: %s", s)
 		}
+	}
+}
+
+func TestEngine_GroupCommandRequiresAdmin(t *testing.T) {
+	e := newTestEngine()
+	e.SetAdminFrom("ou_admin")
+	p := &stubGroupModePlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}
+
+	msg := &Message{SessionKey: "feishu:oc_group:ou_member", UserID: "ou_member", ReplyCtx: "ctx"}
+	e.handleCommand(p, msg, "/group public")
+
+	if p.setMode != "" {
+		t.Fatalf("non-admin changed mode to %q", p.setMode)
+	}
+	if len(p.sent) != 1 || !strings.Contains(p.sent[0], "admin") {
+		t.Fatalf("sent = %v, want admin required message", p.sent)
+	}
+}
+
+func TestEngine_GroupCommandSwitchesMode(t *testing.T) {
+	e := newTestEngine()
+	e.SetAdminFrom("ou_admin")
+	p := &stubGroupModePlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}
+
+	msg := &Message{SessionKey: "feishu:oc_group:ou_admin", UserID: "ou_admin", ReplyCtx: "ctx"}
+	e.handleCommand(p, msg, "/group public")
+
+	if p.setMode != "public" {
+		t.Fatalf("setMode = %q, want public", p.setMode)
+	}
+	if len(p.sent) != 1 || !strings.Contains(p.sent[0], "public") || !strings.Contains(p.sent[0], "oc_group") {
+		t.Fatalf("sent = %v, want public group confirmation", p.sent)
+	}
+}
+
+func TestEngine_GroupCommandShowsCurrentMode(t *testing.T) {
+	e := newTestEngine()
+	e.SetAdminFrom("ou_admin")
+	p := &stubGroupModePlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "feishu"},
+		currentMode:        "admin",
+	}
+
+	msg := &Message{SessionKey: "feishu:oc_group:ou_admin", UserID: "ou_admin", ReplyCtx: "ctx"}
+	e.handleCommand(p, msg, "/group")
+
+	if p.setMode != "" {
+		t.Fatalf("show command unexpectedly changed mode to %q", p.setMode)
+	}
+	if len(p.sent) != 1 || !strings.Contains(p.sent[0], "admin") || !strings.Contains(p.sent[0], "/group public") {
+		t.Fatalf("sent = %v, want current mode and usage", p.sent)
 	}
 }
 

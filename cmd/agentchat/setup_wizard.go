@@ -24,6 +24,7 @@ type feishuSetupWizardConfig struct {
 	AgentType              string
 	WorkDir                string
 	AdminOpenID            string
+	AccessPreset           string
 	AutoBindChats          bool
 	GroupReplyAll          bool
 	GroupContextBuffer     bool
@@ -92,6 +93,7 @@ func prepareFeishuSetupWizardBot(cfg *feishuSetupWizardConfig) error {
 			platformType = detectedType
 		}
 		cfg.PlatformType = platformType
+		cfg.OwnerOpenID = strings.TrimSpace(setupWizardFetchAppCreatorOpenID(cfg.AppID, cfg.AppSecret, platformType))
 		cfg.BotPrepared = true
 		return nil
 
@@ -132,6 +134,7 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 	}
 	reader := bufio.NewReader(in)
 	cfg := defaults
+	cfg.AccessPreset = normalizeFeishuSetupAccessPreset(cfg.AccessPreset)
 
 	printWizardIntro(out)
 
@@ -228,7 +231,7 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 		return cfg, err
 	}
 
-	printWizardSection(out, "聊天访问 / Chat access", "默认绑定模式允许管理员首次使用时绑定私聊或群聊。 / Admins can bind private chats and groups on first use.")
+	printWizardSection(out, "聊天访问 / Chat access", "选择这个机器人给谁回复；后台仍会保留可用的聊天上下文。 / Choose who this bot replies to; available chat context is still kept.")
 	adminDefault := cfg.AdminOpenID
 	if strings.TrimSpace(adminDefault) == "" && strings.TrimSpace(cfg.OwnerOpenID) != "" {
 		adminDefault = cfg.OwnerOpenID
@@ -237,26 +240,16 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 	if err != nil {
 		return cfg, err
 	}
-
-	cfg.AutoBindChats, err = promptBool(reader, out, "管理员自动绑定会话 / Auto-bind chats by admin", cfg.AutoBindChats)
+	if strings.TrimSpace(cfg.AdminOpenID) == "" && strings.TrimSpace(cfg.OwnerOpenID) == "" {
+		return cfg, fmt.Errorf("管理员 open_id is required when the app creator cannot be detected")
+	}
+	cfg.AccessPreset, err = promptChoice(reader, out, "权限方案 / Access plan", feishuSetupAccessPresetChoices(), cfg.AccessPreset)
 	if err != nil {
 		return cfg, err
 	}
+	applyFeishuSetupAccessPreset(&cfg)
 
-	printWizardSection(out, "群聊行为 / Group behavior", "设置机器人何时回复，以及发送多少群聊上下文。 / Tune replies and group context sent to the agent.")
-	groupDefault := "mention"
-	if cfg.GroupReplyAll {
-		groupDefault = "all"
-	}
-	groupMode, err := promptChoice(reader, out, "群聊触发模式 / Group trigger mode", []setupChoice{
-		{Key: "mention", Label: "仅被 @ 时回复 / Only respond when mentioned", Hint: "推荐 / recommended"},
-		{Key: "all", Label: "每条群消息都回复 / Respond to every group message", Hint: "群聊可能变吵 / busy groups can get noisy"},
-	}, groupDefault)
-	if err != nil {
-		return cfg, err
-	}
-	cfg.GroupReplyAll = groupMode == "all"
-
+	printWizardSection(out, "群聊行为 / Group behavior", "群聊统一在 @ 机器人时触发；非 @ 消息只作为上下文。 / Groups always trigger on mention; non-mention messages are context only.")
 	cfg.GroupContextBuffer, err = promptBool(reader, out, "包含近期群聊历史作为上下文 / Include recent group history as context", cfg.GroupContextBuffer)
 	if err != nil {
 		return cfg, err
@@ -319,6 +312,61 @@ func setupAgentChoices() []setupChoice {
 		choices = append(choices, setupChoice{Key: "codex", Label: "Codex", Hint: "recommended default"})
 	}
 	return choices
+}
+
+func normalizeFeishuSetupAccessPreset(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "public", "public_bot":
+		return feishuAccessPresetPublic
+	default:
+		return feishuAccessPresetCopilot
+	}
+}
+
+func parseFeishuSetupAccessPreset(value string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "copilot":
+		return feishuAccessPresetCopilot, nil
+	case "public", "public_bot":
+		return feishuAccessPresetPublic, nil
+	default:
+		return "", fmt.Errorf("invalid access plan %q (want copilot or public)", value)
+	}
+}
+
+func feishuSetupAccessPresetChoices() []setupChoice {
+	return []setupChoice{
+		{
+			Key:   feishuAccessPresetCopilot,
+			Label: "Copilot / 个人协作机器人",
+			Hint:  `管理员私聊；管理员 @ 后绑定群为 admin_group，可用 /group 切换公开。 / Admin private chat; admin mention binds groups as admin_group; /group can make them public.`,
+		},
+		{
+			Key:   feishuAccessPresetPublic,
+			Label: "Public Bot / 组织公开机器人",
+			Hint:  `允许所有私聊和所有群聊 @ 使用。 / Allow all private chats and all group mentions.`,
+		},
+	}
+}
+
+func applyFeishuSetupAccessPreset(cfg *feishuSetupWizardConfig) {
+	cfg.AccessPreset = normalizeFeishuSetupAccessPreset(cfg.AccessPreset)
+	cfg.AutoBindChats = true
+	cfg.GroupReplyAll = false
+}
+
+func formatFeishuSetupAccessPreset(value string) string {
+	if normalizeFeishuSetupAccessPreset(value) == feishuAccessPresetPublic {
+		return "Public Bot / public"
+	}
+	return "Copilot / copilot"
+}
+
+func feishuSetupAccessPresetBindings(value string) (privateChats, publicGroupChats, adminGroupChats string) {
+	if normalizeFeishuSetupAccessPreset(value) == feishuAccessPresetPublic {
+		return "*", "*", ""
+	}
+	return "", "", ""
 }
 
 func printWizardIntro(out io.Writer) {
@@ -448,10 +496,7 @@ func printFeishuSetupWizardSummary(out io.Writer, cfg feishuSetupWizardConfig) {
 	if cfg.InstallAndStartService {
 		service = "安装并启动 / install_and_start"
 	}
-	trigger := "仅 @ / mention_only"
-	if cfg.GroupReplyAll {
-		trigger = "每条消息 / all_messages"
-	}
+	privateChats, publicGroupChats, adminGroupChats := feishuSetupAccessPresetBindings(cfg.AccessPreset)
 
 	printWizardSection(out, "摘要 / Summary", "写入配置前确认。 / Review before writing config.")
 	printSummaryField(out, "配置文件 / Config file", cfg.ConfigPath)
@@ -461,13 +506,14 @@ func printFeishuSetupWizardSummary(out io.Writer, cfg feishuSetupWizardConfig) {
 	printSummaryField(out, "Agent 类型 / Agent", cfg.AgentType)
 	printSummaryField(out, "工作目录 / Workspace", cfg.WorkDir)
 	fmt.Fprintln(out)
-	printSummaryField(out, "访问模式 / Access mode", "chat_binding")
+	printSummaryField(out, "权限方案 / Access plan", formatFeishuSetupAccessPreset(cfg.AccessPreset))
 	printSummaryField(out, "管理员 open_id / Admin", admin)
 	printSummaryField(out, "自动绑定 / Auto-bind", formatWizardBool(cfg.AutoBindChats))
-	printSummaryField(out, "私聊绑定 / Private binding", `allow_private_chats = ""`)
-	printSummaryField(out, "群聊绑定 / Group binding", `allow_group_chats = ""`)
+	printSummaryField(out, "私聊绑定 / Private binding", fmt.Sprintf(`private_chats = %q`, privateChats))
+	printSummaryField(out, "公开群聊 / Public groups", fmt.Sprintf(`public_group_chats = %q`, publicGroupChats))
+	printSummaryField(out, "管理员群聊 / Admin groups", fmt.Sprintf(`admin_group_chats = %q`, adminGroupChats))
 	fmt.Fprintln(out)
-	printSummaryField(out, "群聊触发 / Group trigger", trigger)
+	printSummaryField(out, "群聊触发 / Group trigger", "仅 @ / mention_only")
 	printSummaryField(out, "群聊上下文 / Group context", formatWizardBool(cfg.GroupContextBuffer))
 	printSummaryField(out, "后台服务 / Background service", service)
 	fmt.Fprintln(out)

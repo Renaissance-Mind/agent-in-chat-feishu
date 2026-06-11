@@ -20,6 +20,19 @@ type PlatformConfigReloader interface {
 	ReloadPlatformConfig(opts map[string]any) error
 }
 
+// GroupModeResult describes a platform-specific group reply mode update.
+type GroupModeResult struct {
+	ChatID string
+	Mode   string
+}
+
+// GroupModeSwitcher is implemented by platforms that can persistently switch
+// the current group between public and admin-only reply modes.
+type GroupModeSwitcher interface {
+	SetGroupMode(ctx context.Context, replyCtx any, sessionKey, userID, mode string) (GroupModeResult, error)
+	CurrentGroupMode(ctx context.Context, replyCtx any, sessionKey string) (GroupModeResult, error)
+}
+
 // ErrNotSupported indicates a platform doesn't support a particular operation.
 var ErrNotSupported = errors.New("operation not supported by this platform")
 

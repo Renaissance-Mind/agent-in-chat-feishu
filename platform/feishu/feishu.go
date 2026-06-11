@@ -200,8 +200,10 @@ type Platform struct {
 	allowFrom                  string
 	allowPrivateChats          string
 	allowPrivateChatsSet       bool
-	allowGroupChats            string
-	allowGroupChatsSet         bool
+	publicGroupChats           string
+	publicGroupChatsSet        bool
+	adminGroupChats            string
+	adminGroupChatsSet         bool
 	groupReplyAll              bool
 	respondToAtEveryoneAndHere bool
 	shareSessionInChannel      bool
@@ -284,9 +286,10 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 	allowFrom, _ := opts["allow_from"].(string)
 	adminFrom, _ := opts["cc_admin_from"].(string)
 	configPlatformIndex := intOption(opts["cc_platform_index"], 0)
-	allowPrivateChats, allowPrivateChatsSet := stringListOption(opts, "allow_private_chats", "allow_private_chat_ids")
-	allowGroupChats, allowGroupChatsSet := stringListOption(opts, "allow_group_chats", "allow_group_chat_ids")
-	if !allowPrivateChatsSet || !allowGroupChatsSet {
+	allowPrivateChats, allowPrivateChatsSet := stringListOption(opts, "private_chats", "allow_private_chats", "allow_private_chat_ids")
+	publicGroupChats, publicGroupChatsSet := stringListOption(opts, "public_group_chats", "allow_group_chats", "allow_group_chat_ids")
+	adminGroupChats, adminGroupChatsSet := stringListOption(opts, "admin_group_chats", "admin_group_chat_ids")
+	if !allowPrivateChatsSet || (!publicGroupChatsSet && !adminGroupChatsSet) {
 		core.CheckAllowFrom(name, allowFrom)
 	}
 	autoBindChats := true
@@ -363,8 +366,10 @@ func newPlatform(name, domain string, opts map[string]any) (core.Platform, error
 		allowFrom:                  allowFrom,
 		allowPrivateChats:          allowPrivateChats,
 		allowPrivateChatsSet:       allowPrivateChatsSet,
-		allowGroupChats:            allowGroupChats,
-		allowGroupChatsSet:         allowGroupChatsSet,
+		publicGroupChats:           publicGroupChats,
+		publicGroupChatsSet:        publicGroupChatsSet,
+		adminGroupChats:            adminGroupChats,
+		adminGroupChatsSet:         adminGroupChatsSet,
 		groupReplyAll:              groupReplyAll,
 		respondToAtEveryoneAndHere: respondToAtEveryoneAndHere,
 		shareSessionInChannel:      shareSessionInChannel,
@@ -404,9 +409,10 @@ func (p *Platform) ReloadPlatformConfig(opts map[string]any) error {
 	allowFrom, _ := opts["allow_from"].(string)
 	projectName, _ := opts["cc_project"].(string)
 	adminFrom, _ := opts["cc_admin_from"].(string)
-	allowPrivateChats, allowPrivateChatsSet := stringListOption(opts, "allow_private_chats", "allow_private_chat_ids")
-	allowGroupChats, allowGroupChatsSet := stringListOption(opts, "allow_group_chats", "allow_group_chat_ids")
-	if !allowPrivateChatsSet || !allowGroupChatsSet {
+	allowPrivateChats, allowPrivateChatsSet := stringListOption(opts, "private_chats", "allow_private_chats", "allow_private_chat_ids")
+	publicGroupChats, publicGroupChatsSet := stringListOption(opts, "public_group_chats", "allow_group_chats", "allow_group_chat_ids")
+	adminGroupChats, adminGroupChatsSet := stringListOption(opts, "admin_group_chats", "admin_group_chat_ids")
+	if !allowPrivateChatsSet || (!publicGroupChatsSet && !adminGroupChatsSet) {
 		core.CheckAllowFrom(p.platformName, allowFrom)
 	}
 	p.configMu.RLock()
@@ -442,8 +448,10 @@ func (p *Platform) ReloadPlatformConfig(opts map[string]any) error {
 	p.autoBindChats = autoBindChats
 	p.allowPrivateChats = allowPrivateChats
 	p.allowPrivateChatsSet = allowPrivateChatsSet
-	p.allowGroupChats = allowGroupChats
-	p.allowGroupChatsSet = allowGroupChatsSet
+	p.publicGroupChats = publicGroupChats
+	p.publicGroupChatsSet = publicGroupChatsSet
+	p.adminGroupChats = adminGroupChats
+	p.adminGroupChatsSet = adminGroupChatsSet
 	p.groupContextBuffer = groupContextBuffer
 	p.contextBufferMaxMessages = contextBufferMaxMessages
 	p.contextBufferMaxAge = time.Duration(contextBufferMaxAgeMins) * time.Minute
@@ -451,10 +459,89 @@ func (p *Platform) ReloadPlatformConfig(opts map[string]any) error {
 
 	slog.Info(p.platformName+": platform config reloaded",
 		"allow_private_chats_set", allowPrivateChatsSet,
-		"allow_group_chats_set", allowGroupChatsSet,
+		"public_group_chats_set", publicGroupChatsSet,
+		"admin_group_chats_set", adminGroupChatsSet,
 		"group_context_buffer", groupContextBuffer,
 	)
 	return nil
+}
+
+func (p *Platform) SetGroupMode(ctx context.Context, rctx any, sessionKey, userID, mode string) (core.GroupModeResult, error) {
+	chatID := p.groupModeChatID(rctx, sessionKey)
+	if chatID == "" {
+		return core.GroupModeResult{}, fmt.Errorf("current message is not associated with a group chat")
+	}
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "public", "public_group":
+		mode = feishuGroupModePublic
+	case "admin", "admin_group":
+		mode = feishuGroupModeAdmin
+	default:
+		return core.GroupModeResult{}, fmt.Errorf("invalid group mode %q", mode)
+	}
+
+	p.configMu.RLock()
+	projectName := p.projectName
+	platformIndex := p.configPlatformIndex
+	adminFrom := p.adminFrom
+	p.configMu.RUnlock()
+	if !isFeishuAdmin(adminFrom, userID) {
+		return core.GroupModeResult{}, fmt.Errorf("admin permission required")
+	}
+	if strings.TrimSpace(projectName) == "" {
+		return core.GroupModeResult{}, fmt.Errorf("project name is unavailable")
+	}
+
+	result, err := config.SetFeishuGroupMode(config.FeishuGroupModeUpdateOptions{
+		ProjectName:   projectName,
+		PlatformIndex: platformIndex,
+		ChatID:        chatID,
+		Mode:          mode,
+	})
+	if err != nil {
+		return core.GroupModeResult{}, err
+	}
+
+	p.configMu.Lock()
+	p.publicGroupChats = result.PublicGroupChats
+	p.publicGroupChatsSet = true
+	p.adminGroupChats = result.AdminGroupChats
+	p.adminGroupChatsSet = true
+	p.configMu.Unlock()
+
+	slog.InfoContext(ctx, p.tag()+": group mode changed", "chat_id", chatID, "mode", mode, "user", userID)
+	return core.GroupModeResult{ChatID: chatID, Mode: result.Mode}, nil
+}
+
+func (p *Platform) CurrentGroupMode(_ context.Context, rctx any, sessionKey string) (core.GroupModeResult, error) {
+	chatID := p.groupModeChatID(rctx, sessionKey)
+	if chatID == "" {
+		return core.GroupModeResult{}, fmt.Errorf("current message is not associated with a group chat")
+	}
+	p.configMu.RLock()
+	defer p.configMu.RUnlock()
+	switch {
+	case allowConfiguredList(p.publicGroupChats, chatID):
+		return core.GroupModeResult{ChatID: chatID, Mode: feishuGroupModePublic}, nil
+	case allowConfiguredList(p.adminGroupChats, chatID):
+		return core.GroupModeResult{ChatID: chatID, Mode: feishuGroupModeAdmin}, nil
+	case p.publicGroupChatsSet || p.adminGroupChatsSet:
+		return core.GroupModeResult{ChatID: chatID, Mode: "unbound"}, nil
+	default:
+		return core.GroupModeResult{ChatID: chatID, Mode: "allow_from"}, nil
+	}
+}
+
+func (p *Platform) groupModeChatID(rctx any, sessionKey string) string {
+	if rc, ok := rctx.(replyContext); ok && strings.TrimSpace(rc.chatID) != "" {
+		return strings.TrimSpace(rc.chatID)
+	}
+	parts := strings.SplitN(sessionKey, ":", 3)
+	if len(parts) >= 2 && parts[0] == p.platformName {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
 }
 
 func (p *Platform) dispatchPlatform() core.Platform {
@@ -951,32 +1038,35 @@ func (p *Platform) onMessage(ctx context.Context, event *larkim.P2MessageReceive
 	atEveryone := p.respondToAtEveryoneAndHere && msg.Content != nil && strings.Contains(*msg.Content, "@_all")
 	sessionKey := p.makeSessionKey(msg, chatID, userID)
 	rctx := replyContext{messageID: messageID, chatID: chatID, sessionKey: sessionKey}
-	if p.chatBindingConfigured(chatType) && !p.chatBound(chatType, chatID) {
-		shouldPrompt := p.shouldPromptForBinding(chatType, mentioned, atEveryone)
-		if shouldPrompt && p.tryAutoBindChat(ctx, chatType, chatID, userID) {
-			slog.Info(p.tag()+": auto-bound chat", "chat_id", chatID, "chat_type", chatType, "user", userID)
-		} else {
-			if shouldPrompt {
+	if chatType == "group" && !mentioned {
+		slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID, "at_everyone", atEveryone)
+		return nil
+	}
+
+	access := p.chatAccessDecision(chatType, chatID, userID)
+	if !access.allowed {
+		if access.reason == feishuAccessUnbound && p.shouldPromptForBinding(chatType, mentioned) {
+			if result, ok := p.tryAutoBindChat(ctx, chatType, chatID, userID); ok {
+				slog.Info(p.tag()+": auto-bound chat", "chat_id", chatID, "chat_type", chatType, "mode", result.Mode, "user", userID)
+				p.replyAutoBoundChat(ctx, rctx, result)
+			} else {
 				p.replyBindingRequired(ctx, rctx, chatType, chatID, userID)
+				slog.Debug(p.tag()+": message from unbound chat", "chat_id", chatID, "chat_type", chatType, "user", userID)
+				return nil
 			}
-			slog.Debug(p.tag()+": message from unbound chat", "chat_id", chatID, "chat_type", chatType, "user", userID)
+		} else {
+			p.replyAccessDenied(ctx, rctx, access, userID)
+			slog.Debug(p.tag()+": message from unauthorized user", "user", userID, "reason", access.reason)
+			return nil
+		}
+		access = p.chatAccessDecision(chatType, chatID, userID)
+		if !access.allowed {
+			slog.Debug(p.tag()+": message still unauthorized after auto-bind", "user", userID, "reason", access.reason)
 			return nil
 		}
 	}
-	if chatType == "group" && !p.groupReplyAll && p.botOpenID != "" {
-		if !mentioned {
-			// Feishu @all sends {"text":"@_all"} with 0 mentions.
-			if atEveryone {
-				slog.Debug(p.tag()+": responding to @all message", "chat_id", chatID)
-			} else {
-				slog.Debug(p.tag()+": ignoring group message without bot mention", "chat_id", chatID)
-				return nil
-			}
-		}
-	}
 
-	if !p.chatAccessAllowed(chatType, chatID, userID) {
-		slog.Debug(p.tag()+": message from unauthorized user", "user", userID)
+	if chatType == "group" && !mentioned {
 		return nil
 	}
 
@@ -2780,11 +2870,56 @@ func allowConfiguredList(allowList, id string) bool {
 	return false
 }
 
+func allowConfiguredListAny(allowList string, ids ...string) bool {
+	for _, id := range ids {
+		if strings.TrimSpace(id) == "" {
+			continue
+		}
+		if allowConfiguredList(allowList, id) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitCommaList(value string) []string {
+	var out []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+const (
+	feishuAccessAllowed          = "allowed"
+	feishuAccessUnbound          = "unbound"
+	feishuAccessPrivateDenied    = "private_denied"
+	feishuAccessAdminGroupDenied = "admin_group_denied"
+	feishuGroupModePublic        = "public"
+	feishuGroupModeAdmin         = "admin"
+)
+
+type feishuAccessDecision struct {
+	allowed bool
+	reason  string
+	mode    string
+}
+
+type feishuAutoBindResult struct {
+	ChatID string
+	Key    string
+	Value  string
+	Mode   string
+}
+
 func (p *Platform) chatBindingConfigured(chatType string) bool {
 	p.configMu.RLock()
 	defer p.configMu.RUnlock()
 	if chatType == "group" {
-		return p.allowGroupChatsSet
+		return p.publicGroupChatsSet || p.adminGroupChatsSet
 	}
 	return p.allowPrivateChatsSet
 }
@@ -2793,41 +2928,68 @@ func (p *Platform) chatBound(chatType, chatID string) bool {
 	p.configMu.RLock()
 	defer p.configMu.RUnlock()
 	if chatType == "group" {
-		return allowConfiguredList(p.allowGroupChats, chatID)
+		return allowConfiguredList(p.publicGroupChats, chatID) || allowConfiguredList(p.adminGroupChats, chatID)
 	}
 	return allowConfiguredList(p.allowPrivateChats, chatID)
 }
 
 func (p *Platform) chatAccessAllowed(chatType, chatID, userID string) bool {
+	return p.chatAccessDecision(chatType, chatID, userID).allowed
+}
+
+func (p *Platform) chatAccessDecision(chatType, chatID, userID string) feishuAccessDecision {
 	p.configMu.RLock()
 	defer p.configMu.RUnlock()
+	isAdmin := isFeishuAdmin(p.adminFrom, userID)
 	if chatType == "group" {
-		if p.allowGroupChatsSet {
-			return allowConfiguredList(p.allowGroupChats, chatID)
+		if p.publicGroupChatsSet && allowConfiguredList(p.publicGroupChats, chatID) {
+			return feishuAccessDecision{allowed: true, reason: feishuAccessAllowed, mode: feishuGroupModePublic}
 		}
-		return core.AllowList(p.allowFrom, userID)
+		if p.adminGroupChatsSet && allowConfiguredList(p.adminGroupChats, chatID) {
+			if isAdmin {
+				return feishuAccessDecision{allowed: true, reason: feishuAccessAllowed, mode: feishuGroupModeAdmin}
+			}
+			return feishuAccessDecision{reason: feishuAccessAdminGroupDenied, mode: feishuGroupModeAdmin}
+		}
+		if p.publicGroupChatsSet || p.adminGroupChatsSet {
+			return feishuAccessDecision{reason: feishuAccessUnbound}
+		}
+		if core.AllowList(p.allowFrom, userID) {
+			return feishuAccessDecision{allowed: true, reason: feishuAccessAllowed, mode: "allow_from"}
+		}
+		return feishuAccessDecision{reason: feishuAccessPrivateDenied}
 	}
 	if p.allowPrivateChatsSet {
-		return allowConfiguredList(p.allowPrivateChats, chatID)
+		if isAdmin || allowConfiguredListAny(p.allowPrivateChats, userID, chatID) {
+			return feishuAccessDecision{allowed: true, reason: feishuAccessAllowed, mode: "private"}
+		}
+		return feishuAccessDecision{reason: feishuAccessPrivateDenied}
 	}
-	return core.AllowList(p.allowFrom, userID)
+	if isAdmin || core.AllowList(p.allowFrom, userID) {
+		return feishuAccessDecision{allowed: true, reason: feishuAccessAllowed, mode: "allow_from"}
+	}
+	return feishuAccessDecision{reason: feishuAccessPrivateDenied}
 }
 
 func (p *Platform) cardActionAllowed(chatID, userID string) bool {
 	p.configMu.RLock()
 	defer p.configMu.RUnlock()
-	if p.allowPrivateChatsSet || p.allowGroupChatsSet {
-		if p.allowPrivateChatsSet && allowConfiguredList(p.allowPrivateChats, chatID) {
+	isAdmin := isFeishuAdmin(p.adminFrom, userID)
+	if p.allowPrivateChatsSet || p.publicGroupChatsSet || p.adminGroupChatsSet {
+		if p.allowPrivateChatsSet && (isAdmin || allowConfiguredListAny(p.allowPrivateChats, userID, chatID)) {
 			return true
 		}
-		if p.allowGroupChatsSet && allowConfiguredList(p.allowGroupChats, chatID) {
+		if p.publicGroupChatsSet && allowConfiguredList(p.publicGroupChats, chatID) {
 			return true
 		}
-		if p.allowPrivateChatsSet && p.allowGroupChatsSet {
+		if p.adminGroupChatsSet && allowConfiguredList(p.adminGroupChats, chatID) {
+			return isAdmin
+		}
+		if p.allowPrivateChatsSet && (p.publicGroupChatsSet || p.adminGroupChatsSet) {
 			return false
 		}
 	}
-	return core.AllowList(p.allowFrom, userID)
+	return isAdmin || core.AllowList(p.allowFrom, userID)
 }
 
 func (p *Platform) allowFromSnapshot() string {
@@ -2857,16 +3019,24 @@ func (p *Platform) logPermissionHint(ctx context.Context, operation string, err 
 	)
 }
 
-func (p *Platform) shouldPromptForBinding(chatType string, mentioned, atEveryone bool) bool {
+func isFeishuAdmin(adminFrom, userID string) bool {
+	adminFrom = strings.TrimSpace(adminFrom)
+	if adminFrom == "" {
+		return false
+	}
+	return core.AllowList(adminFrom, userID)
+}
+
+func (p *Platform) shouldPromptForBinding(chatType string, mentioned bool) bool {
 	if chatType != "group" {
 		return true
 	}
-	return p.groupReplyAll || mentioned || atEveryone || p.botOpenID == ""
+	return mentioned
 }
 
-func (p *Platform) tryAutoBindChat(ctx context.Context, chatType, chatID, userID string) bool {
+func (p *Platform) tryAutoBindChat(ctx context.Context, chatType, chatID, userID string) (feishuAutoBindResult, bool) {
 	if chatID == "" || userID == "" {
-		return false
+		return feishuAutoBindResult{}, false
 	}
 	p.configMu.RLock()
 	enabled := p.autoBindChats
@@ -2875,8 +3045,13 @@ func (p *Platform) tryAutoBindChat(ctx context.Context, chatType, chatID, userID
 	platformIndex := p.configPlatformIndex
 	p.configMu.RUnlock()
 
-	if !enabled || strings.TrimSpace(projectName) == "" || !core.AllowList(adminFrom, userID) {
-		return false
+	if !enabled || strings.TrimSpace(projectName) == "" || !isFeishuAdmin(adminFrom, userID) {
+		return feishuAutoBindResult{}, false
+	}
+
+	groupMode := ""
+	if chatType == "group" {
+		groupMode = feishuGroupModeAdmin
 	}
 
 	result, err := config.AddFeishuChatBinding(config.FeishuChatBindingUpdateOptions{
@@ -2884,23 +3059,28 @@ func (p *Platform) tryAutoBindChat(ctx context.Context, chatType, chatID, userID
 		PlatformIndex: platformIndex,
 		ChatType:      chatType,
 		ChatID:        chatID,
+		GroupMode:     groupMode,
 	})
 	if err != nil {
 		slog.WarnContext(ctx, p.tag()+": auto-bind chat failed", "chat_id", chatID, "chat_type", chatType, "user", userID, "error", err)
-		return false
+		return feishuAutoBindResult{}, false
 	}
 
 	p.configMu.Lock()
 	if chatType == "group" {
-		p.allowGroupChats = result.Value
-		p.allowGroupChatsSet = true
+		p.adminGroupChats = result.Value
+		p.adminGroupChatsSet = true
 	} else {
 		p.allowPrivateChats = result.Value
 		p.allowPrivateChatsSet = true
 	}
 	p.configMu.Unlock()
 
-	return true
+	mode := "private"
+	if chatType == "group" {
+		mode = feishuGroupModeAdmin
+	}
+	return feishuAutoBindResult{ChatID: chatID, Key: result.Key, Value: result.Value, Mode: mode}, true
 }
 
 func (p *Platform) replyBindingRequired(ctx context.Context, rctx replyContext, chatType, chatID, userID string) {
@@ -2913,11 +3093,50 @@ func (p *Platform) replyBindingRequired(ctx context.Context, rctx replyContext, 
 	}
 }
 
+func (p *Platform) replyAutoBoundChat(ctx context.Context, rctx replyContext, result feishuAutoBindResult) {
+	if result.Mode == feishuGroupModeAdmin {
+		content := "已绑定当前群聊为 `admin_group`。\n\n当前仅管理员可以 @ 我触发回复；我仍会在管理员触发时读取群聊上下文和文件。\n\n管理员可发送 `/group` 切换为公开群模式，让群成员也能 @ 我使用。"
+		if err := p.Reply(ctx, rctx, content); err != nil {
+			slog.Warn(p.tag()+": reply auto-bind message failed", "chat_id", result.ChatID, "error", err)
+		}
+	}
+}
+
+func (p *Platform) replyAccessDenied(ctx context.Context, rctx replyContext, decision feishuAccessDecision, userID string) {
+	switch decision.reason {
+	case feishuAccessPrivateDenied:
+		_ = p.Reply(ctx, rctx, fmt.Sprintf("你当前不在这个机器人的私聊名单内。\n\n你的用户 ID: `%s`\n请联系管理员 %s 开通使用。", userID, p.adminContactText()))
+	case feishuAccessAdminGroupDenied:
+		_ = p.Reply(ctx, rctx, fmt.Sprintf("当前群聊为 `admin_group`，仅管理员可以 @ 我触发回复。\n\n请联系管理员 %s；管理员也可以发送 `/group` 切换为公开群模式。", p.adminContactText()))
+	}
+}
+
+func (p *Platform) adminContactText() string {
+	p.configMu.RLock()
+	adminFrom := p.adminFrom
+	p.configMu.RUnlock()
+	var names []string
+	for _, id := range splitCommaList(adminFrom) {
+		if id == "*" {
+			continue
+		}
+		name := strings.TrimSpace(p.resolveUserName(id))
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return "管理员"
+	}
+	return strings.Join(names, "、")
+}
+
 func (p *Platform) bindingRequiredMessage(chatType, chatID, userID string) string {
 	if chatType == "group" {
-		return fmt.Sprintf("当前群聊未绑定，已拒绝处理。\n\n群聊 ID: `%s`\n发送人 ID: `%s`\n\n把群聊 ID 添加到 `config.toml` 的 `allow_group_chats` 后发送 `/config reload`，或重启 agentchat。", chatID, userID)
+		return fmt.Sprintf("当前群聊未绑定，已拒绝处理。\n\n群聊 ID: `%s`\n发送人 ID: `%s`\n\n请联系管理员 %s 处理；管理员在群里 @ 我会默认绑定为 `admin_group`，也可以把群聊 ID 添加到 `public_group_chats` 或 `admin_group_chats`。", chatID, userID, p.adminContactText())
 	}
-	return fmt.Sprintf("当前私聊未绑定，已拒绝处理。\n\n私聊 ID: `%s`\n发送人 ID: `%s`\n\n把私聊 ID 添加到 `config.toml` 的 `allow_private_chats` 后发送 `/config reload`，或重启 agentchat。", chatID, userID)
+	return fmt.Sprintf("当前私聊未绑定，已拒绝处理。\n\n私聊 ID: `%s`\n发送人 ID: `%s`\n\n请联系管理员 %s，把你的用户 ID 添加到 `private_chats`。", chatID, userID, p.adminContactText())
 }
 
 const (

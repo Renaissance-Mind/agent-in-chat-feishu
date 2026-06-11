@@ -1408,6 +1408,7 @@ type FeishuCredentialUpdateOptions struct {
 	AppSecret             string // required
 	OwnerOpenID           string // optional owner id from onboarding flow
 	SetAllowFromEmpty     bool   // when true, seed/append allow_from with OwnerOpenID while preserving "*"
+	AccessPreset          string // optional setup preset: "public" or "copilot"
 	AutoBindChats         *bool  // optional setup override for auto_bind_chats
 	GroupReplyAll         *bool  // optional setup override for group_reply_all
 	GroupContextBuffer    *bool  // optional setup override for group_context_buffer
@@ -1448,8 +1449,9 @@ type FeishuCredentialUpdateResult struct {
 type FeishuChatBindingUpdateOptions struct {
 	ProjectName   string // required
 	PlatformIndex int    // 1-based index among feishu/lark platforms in the project; 0 = first
-	ChatType      string // "group" writes allow_group_chats; everything else writes allow_private_chats
+	ChatType      string // "group" writes public_group_chats/admin_group_chats; everything else writes private_chats
 	ChatID        string // required
+	GroupMode     string // for groups: "admin" writes admin_group_chats; default writes public_group_chats
 }
 
 // FeishuChatBindingUpdateResult describes the persisted chat binding.
@@ -1460,6 +1462,29 @@ type FeishuChatBindingUpdateResult struct {
 	Key              string
 	Value            string
 	Added            bool
+}
+
+// FeishuGroupModeUpdateOptions controls switching a group chat between public
+// and admin-only reply modes.
+type FeishuGroupModeUpdateOptions struct {
+	ProjectName   string // required
+	PlatformIndex int    // 1-based index among feishu/lark platforms in the project; 0 = first
+	ChatID        string // required
+	Mode          string // "public" or "admin"
+}
+
+// FeishuGroupModeUpdateResult describes the persisted group mode change.
+type FeishuGroupModeUpdateResult struct {
+	ProjectName        string
+	ProjectIndex       int
+	PlatformAbsIndex   int
+	Mode               string
+	PublicGroupChats   string
+	AdminGroupChats    string
+	PublicGroupAdded   bool
+	AdminGroupAdded    bool
+	PublicGroupRemoved bool
+	AdminGroupRemoved  bool
 }
 
 const defaultFeishuSetupConfigHeader = `language = "zh"
@@ -1675,6 +1700,12 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 	if opts.PlatformType != "" && opts.PlatformType != "feishu" && opts.PlatformType != "lark" {
 		return nil, fmt.Errorf("invalid platform type %q (want feishu or lark)", opts.PlatformType)
 	}
+	accessPreset := strings.ToLower(strings.TrimSpace(opts.AccessPreset))
+	switch accessPreset {
+	case "", "copilot", "public":
+	default:
+		return nil, fmt.Errorf("invalid access preset %q (want public or copilot)", opts.AccessPreset)
+	}
 
 	data, err := os.ReadFile(ConfigPath)
 	if err != nil {
@@ -1796,6 +1827,24 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 		lines = upsertTomlRawKey(lines, span.optionsStart+1, span.optionsEnd, "group_reply_all", formatTomlBool(*opts.GroupReplyAll))
 		span = reloadSpan()
 	}
+	if accessPreset != "" {
+		var privateChats, publicGroupChats, adminGroupChats string
+		switch accessPreset {
+		case "public":
+			privateChats = "*"
+			publicGroupChats = "*"
+		case "copilot":
+			privateChats = ""
+			publicGroupChats = ""
+			adminGroupChats = ""
+		}
+		lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "private_chats", privateChats)
+		span = reloadSpan()
+		lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "public_group_chats", publicGroupChats)
+		span = reloadSpan()
+		lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "admin_group_chats", adminGroupChats)
+		span = reloadSpan()
+	}
 	if opts.ShareSessionInChannel != nil {
 		lines = upsertTomlRawKey(lines, span.optionsStart+1, span.optionsEnd, "share_session_in_channel", formatTomlBool(*opts.ShareSessionInChannel))
 		span = reloadSpan()
@@ -1830,8 +1879,8 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 	}, nil
 }
 
-// AddFeishuChatBinding appends chat_id to allow_group_chats or
-// allow_private_chats for a project's Feishu/Lark platform and persists the
+// AddFeishuChatBinding appends chat_id to private_chats, public_group_chats,
+// or admin_group_chats for a project's Feishu/Lark platform and persists the
 // config atomically.
 func AddFeishuChatBinding(opts FeishuChatBindingUpdateOptions) (*FeishuChatBindingUpdateResult, error) {
 	configMu.Lock()
@@ -1902,9 +1951,14 @@ func AddFeishuChatBinding(opts FeishuChatBindingUpdateOptions) (*FeishuChatBindi
 		platform.Options = map[string]any{}
 	}
 
-	key := "allow_private_chats"
+	key := "private_chats"
 	if strings.EqualFold(strings.TrimSpace(opts.ChatType), "group") {
-		key = "allow_group_chats"
+		switch strings.ToLower(strings.TrimSpace(opts.GroupMode)) {
+		case "admin", "admin_group":
+			key = "admin_group_chats"
+		default:
+			key = "public_group_chats"
+		}
 	}
 	current := strings.TrimSpace(stringOption(platform.Options[key]))
 	next, added := mergeCommaSeparatedValue(current, chatID)
@@ -1952,6 +2006,148 @@ func AddFeishuChatBinding(opts FeishuChatBindingUpdateOptions) (*FeishuChatBindi
 	}, nil
 }
 
+// SetFeishuGroupMode moves chat_id into exactly one of public_group_chats or
+// admin_group_chats for a project's Feishu/Lark platform.
+func SetFeishuGroupMode(opts FeishuGroupModeUpdateOptions) (*FeishuGroupModeUpdateResult, error) {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	if ConfigPath == "" {
+		return nil, fmt.Errorf("config path not set")
+	}
+	projectName := strings.TrimSpace(opts.ProjectName)
+	if projectName == "" {
+		return nil, fmt.Errorf("project name is required")
+	}
+	chatID := strings.TrimSpace(opts.ChatID)
+	if chatID == "" {
+		return nil, fmt.Errorf("chat id is required")
+	}
+	mode := strings.ToLower(strings.TrimSpace(opts.Mode))
+	switch mode {
+	case "public", "public_group":
+		mode = "public"
+	case "admin", "admin_group":
+		mode = "admin"
+	default:
+		return nil, fmt.Errorf("invalid group mode %q (want public or admin)", opts.Mode)
+	}
+	if opts.PlatformIndex < 0 {
+		return nil, fmt.Errorf("platform index must be >= 0")
+	}
+
+	data, err := os.ReadFile(ConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	raw := string(data)
+	cfg := &Config{}
+	if err := toml.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	projectIdx := -1
+	for i := range cfg.Projects {
+		if cfg.Projects[i].Name == projectName {
+			projectIdx = i
+			break
+		}
+	}
+	if projectIdx < 0 {
+		return nil, fmt.Errorf("project %q not found", projectName)
+	}
+
+	proj := &cfg.Projects[projectIdx]
+	candidates := make([]int, 0, len(proj.Platforms))
+	for i := range proj.Platforms {
+		t := strings.ToLower(strings.TrimSpace(proj.Platforms[i].Type))
+		if t == "feishu" || t == "lark" {
+			candidates = append(candidates, i)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("project %q has no feishu/lark platform", projectName)
+	}
+	targetPos := 0
+	if opts.PlatformIndex > 0 {
+		targetPos = opts.PlatformIndex - 1
+	}
+	if targetPos < 0 || targetPos >= len(candidates) {
+		return nil, fmt.Errorf(
+			"platform index %d out of range: project %q has %d feishu/lark platform(s)",
+			opts.PlatformIndex, projectName, len(candidates),
+		)
+	}
+
+	absIdx := candidates[targetPos]
+	platform := &proj.Platforms[absIdx]
+	if platform.Options == nil {
+		platform.Options = map[string]any{}
+	}
+
+	publicCurrent := strings.TrimSpace(stringOption(platform.Options["public_group_chats"]))
+	if publicCurrent == "" {
+		publicCurrent = strings.TrimSpace(stringOption(platform.Options["allow_group_chats"]))
+	}
+	adminCurrent := strings.TrimSpace(stringOption(platform.Options["admin_group_chats"]))
+	publicNext, publicRemoved := removeCommaSeparatedValue(publicCurrent, chatID)
+	adminNext, adminRemoved := removeCommaSeparatedValue(adminCurrent, chatID)
+	publicAdded := false
+	adminAdded := false
+	if mode == "public" {
+		publicNext, publicAdded = mergeCommaSeparatedValue(publicNext, chatID)
+	} else {
+		adminNext, adminAdded = mergeCommaSeparatedValue(adminNext, chatID)
+	}
+
+	lines, hadTrailing := splitConfigLines(raw)
+	spans := buildRawProjectSpans(lines)
+	if projectIdx >= len(spans) {
+		return nil, fmt.Errorf("project %q located in parsed config but not raw file", projectName)
+	}
+	if absIdx >= len(spans[projectIdx].platforms) {
+		return nil, fmt.Errorf("feishu/lark platform located in parsed config but not raw file")
+	}
+	reloadSpan := func() rawPlatformSpan {
+		spans = buildRawProjectSpans(lines)
+		return spans[projectIdx].platforms[absIdx]
+	}
+	span := spans[projectIdx].platforms[absIdx]
+	if span.optionsStart < 0 {
+		insertAt := span.end + 1
+		block := make([]string, 0, 4)
+		if insertAt > 0 && strings.TrimSpace(lines[insertAt-1]) != "" {
+			block = append(block, "")
+		}
+		block = append(block, "[projects.platforms.options]")
+		if insertAt < len(lines) && strings.TrimSpace(lines[insertAt]) != "" {
+			block = append(block, "")
+		}
+		lines = insertLines(lines, insertAt, block)
+		span = reloadSpan()
+	}
+
+	lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "public_group_chats", publicNext)
+	span = reloadSpan()
+	lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "admin_group_chats", adminNext)
+	if err := writeRawConfig(joinConfigLines(lines, hadTrailing)); err != nil {
+		return nil, err
+	}
+
+	return &FeishuGroupModeUpdateResult{
+		ProjectName:        projectName,
+		ProjectIndex:       projectIdx,
+		PlatformAbsIndex:   absIdx,
+		Mode:               mode,
+		PublicGroupChats:   publicNext,
+		AdminGroupChats:    adminNext,
+		PublicGroupAdded:   publicAdded,
+		AdminGroupAdded:    adminAdded,
+		PublicGroupRemoved: publicRemoved,
+		AdminGroupRemoved:  adminRemoved,
+	}, nil
+}
+
 func stringOption(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -1961,8 +2157,9 @@ func stringOption(v any) string {
 
 func appendDefaultFeishuPlatformOptionLines(lines []string) []string {
 	return append(lines,
-		`allow_private_chats = ""`,
-		`allow_group_chats = ""`,
+		`private_chats = ""`,
+		`public_group_chats = ""`,
+		`admin_group_chats = ""`,
 		"auto_bind_chats = true",
 		"group_reply_all = false",
 		"share_session_in_channel = true",
@@ -2032,6 +2229,28 @@ func mergeCommaSeparatedValue(current, item string) (string, bool) {
 		return "*", false
 	}
 	return strings.Join(merged, ","), true
+}
+
+func removeCommaSeparatedValue(current, item string) (string, bool) {
+	current = strings.TrimSpace(current)
+	item = strings.TrimSpace(item)
+	if current == "" || current == "*" || item == "" {
+		return current, false
+	}
+	var kept []string
+	removed := false
+	for _, part := range strings.Split(current, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.EqualFold(part, item) {
+			removed = true
+			continue
+		}
+		kept = append(kept, part)
+	}
+	return strings.Join(kept, ","), removed
 }
 
 func upsertProjectStringKey(lines []string, projectIdx int, key, value string) []string {

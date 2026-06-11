@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -123,11 +124,12 @@ func TestNew_ProgressStyleRejectsInvalidValue(t *testing.T) {
 
 func TestFeishu_ChatBindingAccess(t *testing.T) {
 	pAny, err := New(map[string]any{
-		"app_id":              "cli_xxx",
-		"app_secret":          "secret",
-		"allow_from":          "ou_owner",
-		"allow_private_chats": "oc_private",
-		"allow_group_chats":   "oc_group",
+		"app_id":             "cli_xxx",
+		"app_secret":         "secret",
+		"allow_from":         "ou_owner",
+		"cc_admin_from":      "ou_admin",
+		"private_chats":      "oc_private",
+		"public_group_chats": "oc_group",
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -138,7 +140,10 @@ func TestFeishu_ChatBindingAccess(t *testing.T) {
 		t.Fatal("bound private chat should be allowed regardless of allow_from")
 	}
 	if p.chatAccessAllowed("p2p", "oc_other", "ou_owner") {
-		t.Fatal("unbound private chat should be denied even for allow_from user")
+		t.Fatal("unbound private chat should be denied for non-admin allow_from user")
+	}
+	if !p.chatAccessAllowed("p2p", "oc_other", "ou_admin") {
+		t.Fatal("admin should be allowed in private chats even when private list is configured")
 	}
 	if !p.chatAccessAllowed("group", "oc_group", "ou_other") {
 		t.Fatal("bound group should allow any sender")
@@ -150,11 +155,11 @@ func TestFeishu_ChatBindingAccess(t *testing.T) {
 
 func TestFeishu_ReloadPlatformConfigUpdatesChatBindings(t *testing.T) {
 	pAny, err := New(map[string]any{
-		"app_id":              "cli_xxx",
-		"app_secret":          "secret",
-		"allow_from":          "ou_owner",
-		"allow_private_chats": "oc_private",
-		"allow_group_chats":   "oc_old",
+		"app_id":             "cli_xxx",
+		"app_secret":         "secret",
+		"allow_from":         "ou_owner",
+		"private_chats":      "oc_private",
+		"public_group_chats": "oc_old",
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -165,9 +170,9 @@ func TestFeishu_ReloadPlatformConfigUpdatesChatBindings(t *testing.T) {
 		t.Fatal("new group should be denied before reload")
 	}
 	if err := p.ReloadPlatformConfig(map[string]any{
-		"allow_from":          "ou_owner",
-		"allow_private_chats": "oc_private",
-		"allow_group_chats":   "oc_old,oc_new",
+		"allow_from":         "ou_owner",
+		"private_chats":      "oc_private",
+		"public_group_chats": "oc_old,oc_new",
 	}); err != nil {
 		t.Fatalf("ReloadPlatformConfig() error = %v", err)
 	}
@@ -184,11 +189,12 @@ func TestFeishu_ReloadPlatformConfigUpdatesChatBindings(t *testing.T) {
 
 func TestFeishu_EmptyChatBindingListsDenyAll(t *testing.T) {
 	pAny, err := New(map[string]any{
-		"app_id":              "cli_xxx",
-		"app_secret":          "secret",
-		"allow_from":          "ou_owner",
-		"allow_private_chats": "",
-		"allow_group_chats":   "",
+		"app_id":             "cli_xxx",
+		"app_secret":         "secret",
+		"allow_from":         "ou_owner",
+		"private_chats":      "",
+		"public_group_chats": "",
+		"admin_group_chats":  "",
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -228,7 +234,7 @@ func TestFeishu_GroupChatBindingAllowsAnyMemberMessage(t *testing.T) {
 		"app_secret":               "secret",
 		"enable_feishu_card":       true,
 		"allow_from":               "ou_owner",
-		"allow_group_chats":        "oc_group",
+		"public_group_chats":       "oc_group",
 		"share_session_in_channel": true,
 	})
 	if err != nil {
@@ -266,17 +272,194 @@ func TestFeishu_GroupChatBindingAllowsAnyMemberMessage(t *testing.T) {
 	}
 }
 
+func TestFeishu_PrivateChatsDenyUnknownUserWithAdminContact(t *testing.T) {
+	pAny, err := New(map[string]any{
+		"app_id":        "cli_xxx",
+		"app_secret":    "secret",
+		"cc_admin_from": "ou_admin",
+		"allow_from":    "ou_allowed",
+		"private_chats": "ou_allowed",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	p := pAny.(*interactivePlatform)
+	p.userNameCache.Store("ou_admin", "Alice Admin")
+
+	var handled atomic.Bool
+	p.handler = func(_ core.Platform, _ *core.Message) {
+		handled.Store(true)
+	}
+	replies := captureReplies(t, p.Platform)
+
+	if err := p.onMessage(context.Background(), feishuTextEvent("om_private_denied", "oc_private", "ou_guest", "p2p", `{"text":"hello"}`, nil)); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+
+	if handled.Load() {
+		t.Fatal("unauthorized private chat should not reach handler")
+	}
+	got := waitForReply(t, replies)
+	if !strings.Contains(got, "ou_guest") || !strings.Contains(got, "Alice Admin") {
+		t.Fatalf("reply = %q, want user id and admin display name", got)
+	}
+}
+
+func TestFeishu_AdminGroupOnlyRepliesToAdmins(t *testing.T) {
+	pAny, err := New(map[string]any{
+		"app_id":            "cli_xxx",
+		"app_secret":        "secret",
+		"cc_admin_from":     "ou_admin",
+		"allow_from":        "ou_admin",
+		"admin_group_chats": "oc_group",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	p := pAny.(*interactivePlatform)
+	p.botOpenID = "ou_bot"
+	p.userNameCache.Store("ou_admin", "Alice Admin")
+
+	var handled atomic.Bool
+	p.handler = func(_ core.Platform, _ *core.Message) {
+		handled.Store(true)
+	}
+	replies := captureReplies(t, p.Platform)
+	mention := []*larkim.MentionEvent{{Key: stringPtr("@bot"), Id: &larkim.UserId{OpenId: stringPtr("ou_bot")}}}
+
+	if err := p.onMessage(context.Background(), feishuTextEvent("om_admin_group_denied", "oc_group", "ou_member", "group", `{"text":"@bot hi"}`, mention)); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+
+	if handled.Load() {
+		t.Fatal("non-admin in admin_group should not reach handler")
+	}
+	got := waitForReply(t, replies)
+	if !strings.Contains(got, "仅管理员") || !strings.Contains(got, "Alice Admin") {
+		t.Fatalf("reply = %q, want admin-only hint with admin display name", got)
+	}
+}
+
+func TestFeishu_AdminAutoBindsGroupAsAdminGroupAndExecutes(t *testing.T) {
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config.toml")
+	if err := os.WriteFile(configPath, []byte(strings.TrimSpace(`
+[[projects]]
+name = "alpha"
+admin_from = "ou_admin"
+
+[projects.agent]
+type = "codex"
+
+[[projects.platforms]]
+type = "feishu"
+
+[projects.platforms.options]
+app_id = "cli_xxx"
+app_secret = "secret"
+admin_group_chats = ""
+public_group_chats = ""
+`)+"\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	oldConfigPath := config.ConfigPath
+	config.ConfigPath = configPath
+	t.Cleanup(func() { config.ConfigPath = oldConfigPath })
+
+	pAny, err := New(map[string]any{
+		"app_id":                   "cli_xxx",
+		"app_secret":               "secret",
+		"cc_project":               "alpha",
+		"cc_admin_from":            "ou_admin",
+		"cc_platform_index":        1,
+		"admin_group_chats":        "",
+		"public_group_chats":       "",
+		"share_session_in_channel": true,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	p := pAny.(*interactivePlatform)
+	p.botOpenID = "ou_bot"
+
+	msgCh := make(chan *core.Message, 1)
+	p.handler = func(_ core.Platform, msg *core.Message) {
+		msgCh <- msg
+	}
+	replies := captureReplies(t, p.Platform)
+	mention := []*larkim.MentionEvent{{Key: stringPtr("@bot"), Id: &larkim.UserId{OpenId: stringPtr("ou_bot")}}}
+
+	if err := p.onMessage(context.Background(), feishuTextEvent("om_admin_bind", "oc_group", "ou_admin", "group", `{"text":"@bot hi"}`, mention)); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+
+	bindReply := waitForReply(t, replies)
+	if !strings.Contains(bindReply, "admin_group") || !strings.Contains(bindReply, "/group") {
+		t.Fatalf("bind reply = %q, want admin_group and /group guidance", bindReply)
+	}
+	select {
+	case msg := <-msgCh:
+		if msg.SessionKey != "feishu:oc_group" || msg.UserID != "ou_admin" || msg.Content != "hi" {
+			t.Fatalf("message = %+v, want admin group trigger forwarded", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected admin auto-bind message to be handled")
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(raw), `admin_group_chats = "oc_group"`) {
+		t.Fatalf("config does not contain persisted admin_group binding:\n%s", raw)
+	}
+}
+
+func TestFeishu_PublicGroupAllowsAnyMentioningMember(t *testing.T) {
+	pAny, err := New(map[string]any{
+		"app_id":             "cli_xxx",
+		"app_secret":         "secret",
+		"cc_admin_from":      "ou_admin",
+		"allow_from":         "ou_admin",
+		"public_group_chats": "oc_group",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	p := pAny.(*interactivePlatform)
+	p.botOpenID = "ou_bot"
+
+	msgCh := make(chan *core.Message, 1)
+	p.handler = func(_ core.Platform, msg *core.Message) {
+		msgCh <- msg
+	}
+	mention := []*larkim.MentionEvent{{Key: stringPtr("@bot"), Id: &larkim.UserId{OpenId: stringPtr("ou_bot")}}}
+
+	if err := p.onMessage(context.Background(), feishuTextEvent("om_public_group", "oc_group", "ou_member", "group", `{"text":"@bot hi"}`, mention)); err != nil {
+		t.Fatalf("onMessage() error = %v", err)
+	}
+
+	select {
+	case msg := <-msgCh:
+		if msg.UserID != "ou_member" || msg.Content != "hi" {
+			t.Fatalf("message = %+v, want public group member trigger", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected public group member message to be handled")
+	}
+}
+
 func TestFeishu_BindingRequiredMessageIncludesChatID(t *testing.T) {
 	p := &Platform{}
 
 	groupMsg := p.bindingRequiredMessage("group", "oc_group", "ou_user")
-	if !strings.Contains(groupMsg, "oc_group") || !strings.Contains(groupMsg, "allow_group_chats") {
-		t.Fatalf("group binding message = %q, want chat id and allow_group_chats hint", groupMsg)
+	if !strings.Contains(groupMsg, "oc_group") || !strings.Contains(groupMsg, "public_group_chats") || !strings.Contains(groupMsg, "admin_group_chats") {
+		t.Fatalf("group binding message = %q, want chat id and new group binding hints", groupMsg)
 	}
 
 	privateMsg := p.bindingRequiredMessage("p2p", "oc_private", "ou_user")
-	if !strings.Contains(privateMsg, "oc_private") || !strings.Contains(privateMsg, "allow_private_chats") {
-		t.Fatalf("private binding message = %q, want chat id and allow_private_chats hint", privateMsg)
+	if !strings.Contains(privateMsg, "oc_private") || !strings.Contains(privateMsg, "private_chats") {
+		t.Fatalf("private binding message = %q, want chat id and private_chats hint", privateMsg)
 	}
 }
 
@@ -297,7 +480,8 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "cli_xxx"
 app_secret = "secret"
-allow_group_chats = ""
+admin_group_chats = ""
+public_group_chats = ""
 `)+"\n"), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -311,7 +495,8 @@ allow_group_chats = ""
 		"cc_project":               "alpha",
 		"cc_admin_from":            "ou_admin",
 		"cc_platform_index":        1,
-		"allow_group_chats":        "",
+		"admin_group_chats":        "",
+		"public_group_chats":       "",
 		"share_session_in_channel": true,
 	})
 	if err != nil {
@@ -350,8 +535,8 @@ allow_group_chats = ""
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	if !strings.Contains(string(raw), `allow_group_chats = "oc_group"`) {
-		t.Fatalf("config does not contain persisted group binding:\n%s", raw)
+	if !strings.Contains(string(raw), `admin_group_chats = "oc_group"`) {
+		t.Fatalf("config does not contain persisted admin group binding:\n%s", raw)
 	}
 }
 
@@ -923,7 +1108,7 @@ func TestLark_ThreadIsolationUsesRootSessionKey(t *testing.T) {
 	}
 }
 
-func TestLark_GroupReplyAllWithThreadIsolationUsesRootSessionKeyWithoutMention(t *testing.T) {
+func TestLark_GroupReplyAllStillRequiresMention(t *testing.T) {
 	p, err := newPlatform("lark", lark.LarkBaseUrl, map[string]any{
 		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": true,
 		"group_reply_all": true, "thread_isolation": true,
@@ -968,21 +1153,8 @@ func TestLark_GroupReplyAllWithThreadIsolationUsesRootSessionKeyWithoutMention(t
 
 	select {
 	case receivedMsg := <-msgCh:
-		if receivedMsg.SessionKey != "lark:oc_test:root:om_root" {
-			t.Fatalf("SessionKey = %q, want lark:oc_test:root:om_root", receivedMsg.SessionKey)
-		}
-		rc, ok := receivedMsg.ReplyCtx.(replyContext)
-		if !ok {
-			t.Fatalf("ReplyCtx type = %T, want replyContext", receivedMsg.ReplyCtx)
-		}
-		if rc.sessionKey != "lark:oc_test:root:om_root" {
-			t.Fatalf("replyContext.sessionKey = %q, want lark:oc_test:root:om_root", rc.sessionKey)
-		}
-		if rc.messageID != "om_root" {
-			t.Fatalf("replyContext.messageID = %q, want om_root", rc.messageID)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected group root message to be handled without mention")
+		t.Fatalf("unexpected group message without mention handled: %+v", receivedMsg)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -1763,6 +1935,45 @@ func TestLark_ReconstructReplyCtx(t *testing.T) {
 }
 
 func stringPtr(s string) *string { return &s }
+
+func captureReplies(t *testing.T, p *Platform) <-chan string {
+	t.Helper()
+	replies := make(chan string, 8)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/tenant_access_token/internal"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","tenant_access_token":"tenant_test"}`))
+		case strings.Contains(r.URL.Path, "/reply") || strings.Contains(r.URL.Path, "/messages"):
+			body, _ := io.ReadAll(r.Body)
+			replies <- string(body)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"message_id":"om_reply"}}`))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok"}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	p.client = lark.NewClient(p.appID, p.appSecret, lark.WithOpenBaseUrl(srv.URL))
+	p.replayClient = newFeishuReplayClient(p.appID, p.appSecret, srv.URL)
+	return replies
+}
+
+func waitForReply(t *testing.T, replies <-chan string) string {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	select {
+	case reply := <-replies:
+		if strings.Contains(reply, "msg_type") || strings.Contains(reply, "content") {
+			return reply
+		}
+		return waitForReply(t, replies)
+	case <-deadline:
+		t.Fatal("expected message reply")
+	}
+	return ""
+}
 
 func feishuTextEvent(messageID, chatID, openID, chatType, content string, mentions []*larkim.MentionEvent) *larkim.P2MessageReceiveV1 {
 	msgType := "text"

@@ -319,7 +319,7 @@ type = "feishu"
 [projects.platforms.options]
 app_id = "cli_xxx"
 app_secret = "secret"
-allow_group_chats = "oc_new"
+public_group_chats = "oc_new"
 `) + "\n"
 	if err := os.WriteFile(configPath, []byte(text), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -344,8 +344,8 @@ allow_group_chats = "oc_new"
 	if platform.reloaded != 1 {
 		t.Fatalf("platform reloaded = %d, want 1", platform.reloaded)
 	}
-	if got, _ := platform.lastOption["allow_group_chats"].(string); got != "oc_new" {
-		t.Fatalf("allow_group_chats = %q, want oc_new", got)
+	if got, _ := platform.lastOption["public_group_chats"].(string); got != "oc_new" {
+		t.Fatalf("public_group_chats = %q, want oc_new", got)
 	}
 	if got, _ := platform.lastOption["cc_project"].(string); got != "demo" {
 		t.Fatalf("cc_project = %q, want demo", got)

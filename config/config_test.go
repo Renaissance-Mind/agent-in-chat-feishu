@@ -1110,6 +1110,33 @@ func TestSaveFeishuPlatformCredentials_WritesSetupWizardOptions(t *testing.T) {
 	}
 }
 
+func TestSaveFeishuPlatformCredentials_WritesAccessPresetPublic(t *testing.T) {
+	configPath := writeConfigFixture(t, feishuConfigFixture)
+	patchConfigPath(t, configPath)
+
+	_, err := SaveFeishuPlatformCredentials(FeishuCredentialUpdateOptions{
+		ProjectName:  "alpha",
+		AppID:        "cli_new_app",
+		AppSecret:    "sec_new_secret",
+		AccessPreset: "public",
+	})
+	if err != nil {
+		t.Fatalf("SaveFeishuPlatformCredentials returned error: %v", err)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	opts := cfg.Projects[0].Platforms[1].Options
+	if got := stringMapValue(opts, "private_chats"); got != "*" {
+		t.Fatalf("private_chats = %q, want *", got)
+	}
+	if got := stringMapValue(opts, "public_group_chats"); got != "*" {
+		t.Fatalf("public_group_chats = %q, want *", got)
+	}
+	if got := stringMapValue(opts, "admin_group_chats"); got != "" {
+		t.Fatalf("admin_group_chats = %q, want empty", got)
+	}
+}
+
 func TestSaveFeishuPlatformCredentials_SelectByIndexAndOverrideType(t *testing.T) {
 	configPath := writeConfigFixture(t, feishuConfigFixture)
 	patchConfigPath(t, configPath)
@@ -1239,13 +1266,13 @@ func TestAddFeishuChatBinding_AppendsBindingAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddFeishuChatBinding returned error: %v", err)
 	}
-	if result.Key != "allow_group_chats" || result.Value != "oc_new" || !result.Added {
+	if result.Key != "public_group_chats" || result.Value != "oc_new" || !result.Added {
 		t.Fatalf("result = %+v, want group binding oc_new added", result)
 	}
 
 	cfg := readConfigFixture(t, configPath)
-	if got := stringMapValue(cfg.Projects[0].Platforms[1].Options, "allow_group_chats"); got != "oc_new" {
-		t.Fatalf("allow_group_chats = %q, want oc_new", got)
+	if got := stringMapValue(cfg.Projects[0].Platforms[1].Options, "public_group_chats"); got != "oc_new" {
+		t.Fatalf("public_group_chats = %q, want oc_new", got)
 	}
 
 	result, err = AddFeishuChatBinding(FeishuChatBindingUpdateOptions{
@@ -1262,6 +1289,63 @@ func TestAddFeishuChatBinding_AppendsBindingAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestAddFeishuChatBinding_AdminGroupModeWritesAdminGroupChats(t *testing.T) {
+	configPath := writeConfigFixture(t, feishuConfigFixture)
+	patchConfigPath(t, configPath)
+
+	result, err := AddFeishuChatBinding(FeishuChatBindingUpdateOptions{
+		ProjectName:   "alpha",
+		PlatformIndex: 1,
+		ChatType:      "group",
+		ChatID:        "oc_admin",
+		GroupMode:     "admin",
+	})
+	if err != nil {
+		t.Fatalf("AddFeishuChatBinding returned error: %v", err)
+	}
+	if result.Key != "admin_group_chats" || result.Value != "oc_admin" || !result.Added {
+		t.Fatalf("result = %+v, want admin_group_chats oc_admin added", result)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	if got := stringMapValue(cfg.Projects[0].Platforms[1].Options, "admin_group_chats"); got != "oc_admin" {
+		t.Fatalf("admin_group_chats = %q, want oc_admin", got)
+	}
+}
+
+func TestSetFeishuGroupModeMovesChatBetweenAdminAndPublic(t *testing.T) {
+	configPath := writeConfigFixture(t, strings.Replace(feishuConfigFixture, `app_secret = "old_feishu_secret"`, `app_secret = "old_feishu_secret"
+public_group_chats = ""
+admin_group_chats = "oc_group"`, 1))
+	patchConfigPath(t, configPath)
+
+	result, err := SetFeishuGroupMode(FeishuGroupModeUpdateOptions{
+		ProjectName:   "alpha",
+		PlatformIndex: 1,
+		ChatID:        "oc_group",
+		Mode:          "public",
+	})
+	if err != nil {
+		t.Fatalf("SetFeishuGroupMode(public) returned error: %v", err)
+	}
+	if result.Mode != "public" || result.PublicGroupChats != "oc_group" || result.AdminGroupChats != "" {
+		t.Fatalf("public result = %+v, want moved to public only", result)
+	}
+
+	result, err = SetFeishuGroupMode(FeishuGroupModeUpdateOptions{
+		ProjectName:   "alpha",
+		PlatformIndex: 1,
+		ChatID:        "oc_group",
+		Mode:          "admin",
+	})
+	if err != nil {
+		t.Fatalf("SetFeishuGroupMode(admin) returned error: %v", err)
+	}
+	if result.Mode != "admin" || result.PublicGroupChats != "" || result.AdminGroupChats != "oc_group" {
+		t.Fatalf("admin result = %+v, want moved to admin only", result)
+	}
+}
+
 func TestAddFeishuChatBinding_TargetsIndexedPlatform(t *testing.T) {
 	configPath := writeConfigFixture(t, feishuConfigFixture)
 	patchConfigPath(t, configPath)
@@ -1275,16 +1359,16 @@ func TestAddFeishuChatBinding_TargetsIndexedPlatform(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddFeishuChatBinding returned error: %v", err)
 	}
-	if result.PlatformAbsIndex != 2 || result.Key != "allow_private_chats" {
+	if result.PlatformAbsIndex != 2 || result.Key != "private_chats" {
 		t.Fatalf("result = %+v, want second feishu/lark platform private binding", result)
 	}
 
 	cfg := readConfigFixture(t, configPath)
-	if got := stringMapValue(cfg.Projects[0].Platforms[2].Options, "allow_private_chats"); got != "oc_private" {
-		t.Fatalf("allow_private_chats = %q, want oc_private", got)
+	if got := stringMapValue(cfg.Projects[0].Platforms[2].Options, "private_chats"); got != "oc_private" {
+		t.Fatalf("private_chats = %q, want oc_private", got)
 	}
-	if got := stringMapValue(cfg.Projects[0].Platforms[1].Options, "allow_private_chats"); got != "" {
-		t.Fatalf("first platform allow_private_chats = %q, want untouched", got)
+	if got := stringMapValue(cfg.Projects[0].Platforms[1].Options, "private_chats"); got != "" {
+		t.Fatalf("first platform private_chats = %q, want untouched", got)
 	}
 }
 
@@ -1334,17 +1418,23 @@ func TestEnsureProjectWithFeishuPlatform_CreatesMissingProject(t *testing.T) {
 	if got := stringMapValue(opts, "allow_from"); got != "" {
 		t.Fatalf("allow_from = %q, want empty so chat binding is the default", got)
 	}
-	if _, ok := opts["allow_private_chats"]; !ok {
-		t.Fatal("allow_private_chats missing, want empty binding list")
+	if _, ok := opts["private_chats"]; !ok {
+		t.Fatal("private_chats missing, want empty binding list")
 	}
-	if got := stringMapValue(opts, "allow_private_chats"); got != "" {
-		t.Fatalf("allow_private_chats = %q, want empty binding list", got)
+	if got := stringMapValue(opts, "private_chats"); got != "" {
+		t.Fatalf("private_chats = %q, want empty binding list", got)
 	}
-	if _, ok := opts["allow_group_chats"]; !ok {
-		t.Fatal("allow_group_chats missing, want empty binding list")
+	if _, ok := opts["public_group_chats"]; !ok {
+		t.Fatal("public_group_chats missing, want empty binding list")
 	}
-	if got := stringMapValue(opts, "allow_group_chats"); got != "" {
-		t.Fatalf("allow_group_chats = %q, want empty binding list", got)
+	if got := stringMapValue(opts, "public_group_chats"); got != "" {
+		t.Fatalf("public_group_chats = %q, want empty binding list", got)
+	}
+	if _, ok := opts["admin_group_chats"]; !ok {
+		t.Fatal("admin_group_chats missing, want empty binding list")
+	}
+	if got := stringMapValue(opts, "admin_group_chats"); got != "" {
+		t.Fatalf("admin_group_chats = %q, want empty binding list", got)
 	}
 	if got, _ := opts["group_context_buffer"].(bool); !got {
 		t.Fatalf("group_context_buffer = %v, want true", opts["group_context_buffer"])
@@ -1462,17 +1552,23 @@ func TestEnsureProjectWithFeishuPlatform_AddsPlatformWhenProjectExistsWithoutFei
 	if got := stringMapValue(opts, "allow_from"); got != "" {
 		t.Fatalf("allow_from = %q, want empty so chat binding is the default", got)
 	}
-	if _, ok := opts["allow_private_chats"]; !ok {
-		t.Fatal("allow_private_chats missing, want empty binding list")
+	if _, ok := opts["private_chats"]; !ok {
+		t.Fatal("private_chats missing, want empty binding list")
 	}
-	if got := stringMapValue(opts, "allow_private_chats"); got != "" {
-		t.Fatalf("allow_private_chats = %q, want empty binding list", got)
+	if got := stringMapValue(opts, "private_chats"); got != "" {
+		t.Fatalf("private_chats = %q, want empty binding list", got)
 	}
-	if _, ok := opts["allow_group_chats"]; !ok {
-		t.Fatal("allow_group_chats missing, want empty binding list")
+	if _, ok := opts["public_group_chats"]; !ok {
+		t.Fatal("public_group_chats missing, want empty binding list")
 	}
-	if got := stringMapValue(opts, "allow_group_chats"); got != "" {
-		t.Fatalf("allow_group_chats = %q, want empty binding list", got)
+	if got := stringMapValue(opts, "public_group_chats"); got != "" {
+		t.Fatalf("public_group_chats = %q, want empty binding list", got)
+	}
+	if _, ok := opts["admin_group_chats"]; !ok {
+		t.Fatal("admin_group_chats missing, want empty binding list")
+	}
+	if got := stringMapValue(opts, "admin_group_chats"); got != "" {
+		t.Fatalf("admin_group_chats = %q, want empty binding list", got)
 	}
 	if got, _ := opts["group_context_buffer"].(bool); !got {
 		t.Fatalf("group_context_buffer = %v, want true", opts["group_context_buffer"])

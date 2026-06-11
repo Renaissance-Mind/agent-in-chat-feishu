@@ -90,6 +90,9 @@ func TestFeishuSetupWizardCollectsKimiBindConfig(t *testing.T) {
 		return "feishu", nil
 	}
 	t.Cleanup(func() { setupWizardValidateAppCredentials = prevValidate })
+	prevFetchCreator := setupWizardFetchAppCreatorOpenID
+	setupWizardFetchAppCreatorOpenID = func(appID, appSecret, platformType string) string { return "" }
+	t.Cleanup(func() { setupWizardFetchAppCreatorOpenID = prevFetchCreator })
 
 	input := strings.NewReader(strings.Join([]string{
 		"",             // config file
@@ -101,8 +104,7 @@ func TestFeishuSetupWizardCollectsKimiBindConfig(t *testing.T) {
 		"kimi",         // agent
 		"/tmp/kimi",    // initial workspace
 		"ou_admin",     // admin open_id
-		"",             // auto-bind chats
-		"",             // group trigger mode
+		"",             // access plan
 		"",             // include group history
 		"no",           // install/start service
 		"yes",          // confirm
@@ -175,8 +177,7 @@ func TestFeishuSetupWizardDefaultsWorkspaceNextToConfig(t *testing.T) {
 		"",    // agent
 		"",    // initial workspace
 		"",    // admin open_id
-		"",    // auto-bind chats
-		"",    // group trigger mode
+		"",    // access plan
 		"",    // include group history
 		"no",  // install/start service
 		"yes", // confirm
@@ -222,8 +223,7 @@ func TestFeishuSetupWizardRendersCompactSections(t *testing.T) {
 		"",    // agent
 		"",    // initial workspace
 		"",    // admin open_id
-		"",    // auto-bind chats
-		"",    // group trigger mode
+		"",    // access plan
 		"",    // include group history
 		"no",  // install/start service
 		"yes", // confirm
@@ -249,8 +249,9 @@ func TestFeishuSetupWizardRendersCompactSections(t *testing.T) {
 		"配置 / Config\n  保存凭证",
 		"机器人 / Bot\n  扫码创建机器人",
 		"本地 Agent / Local agent\n  选择配置名",
-		"聊天访问 / Chat access\n  默认绑定模式",
-		"群聊行为 / Group behavior\n  设置机器人何时回复",
+		"聊天访问 / Chat access\n  选择这个机器人",
+		"权限方案 / Access plan",
+		"群聊行为 / Group behavior\n  群聊统一在 @ 机器人时触发",
 		"运行方式 / Runtime\n  立即启动后台服务",
 		"摘要 / Summary\n  写入配置前确认",
 		"Select [create]",
@@ -452,6 +453,14 @@ func TestFeishuSetupWizardTUIPreparesBoundBotBeforeAdminStep(t *testing.T) {
 		return "lark", nil
 	}
 	t.Cleanup(func() { setupWizardValidateAppCredentials = prevValidate })
+	prevFetchCreator := setupWizardFetchAppCreatorOpenID
+	setupWizardFetchAppCreatorOpenID = func(appID, appSecret, platformType string) string {
+		if appID != "cli_bound" || appSecret != "sec_bound" || platformType != "lark" {
+			t.Fatalf("fetch creator args = (%q, %q, %q)", appID, appSecret, platformType)
+		}
+		return "ou_bound_owner"
+	}
+	t.Cleanup(func() { setupWizardFetchAppCreatorOpenID = prevFetchCreator })
 
 	model := newSetupWizardTUIModel(feishuSetupWizardConfig{
 		ConfigPath:             "/tmp/agentchat/config.toml",
@@ -475,6 +484,9 @@ func TestFeishuSetupWizardTUIPreparesBoundBotBeforeAdminStep(t *testing.T) {
 	}
 	if model.cfg.PlatformType != "lark" {
 		t.Fatalf("PlatformType = %q, want detected lark", model.cfg.PlatformType)
+	}
+	if model.cfg.OwnerOpenID != "ou_bound_owner" {
+		t.Fatalf("OwnerOpenID = %q, want detected owner", model.cfg.OwnerOpenID)
 	}
 	if got := model.currentStepIDs(); containsSetupStep(got, setupStepAppID) || containsSetupStep(got, setupStepPlatform) {
 		t.Fatalf("prepared bound bot should skip credential/platform steps, got %v", got)

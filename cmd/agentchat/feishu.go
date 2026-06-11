@@ -32,6 +32,9 @@ const (
 	feishuSetupModeNew  = "new"
 	feishuSetupModeBind = "bind"
 
+	feishuAccessPresetCopilot = "copilot"
+	feishuAccessPresetPublic  = "public"
+
 	accountsFeishuBaseURL = "https://accounts.feishu.cn"
 	accountsLarkBaseURL   = "https://accounts.larksuite.com"
 	openFeishuBaseURL     = "https://open.feishu.cn"
@@ -108,6 +111,7 @@ type registrationClient struct {
 }
 
 var openBrowserURL = openURL
+var setupWizardFetchAppCreatorOpenID = fetchAppCreatorOpenIDForSetup
 
 type registrationFlowOptions struct {
 	TimeoutSeconds int
@@ -165,10 +169,11 @@ func runFeishuSetup(args []string, requestedMode string) {
 	wizard := fs.Bool("wizard", false, "run the interactive setup wizard")
 	noWizard := fs.Bool("no-wizard", false, "skip the interactive setup wizard")
 	autoBindChats := fs.Bool("auto-bind-chats", true, "allow admin users to auto-bind new private/group chats")
-	groupReplyAll := fs.Bool("group-reply-all", false, "respond to every group message instead of only mentions")
+	groupReplyAll := fs.Bool("group-reply-all", false, "deprecated; group chats always respond only when mentioned")
 	groupContextBuffer := fs.Bool("group-context-buffer", true, "include recent group history as background context")
 	shareSessionInChannel := fs.Bool("share-session-in-channel", true, "share one agent session per group chat")
 	enableFeishuCard := fs.Bool("enable-feishu-card", true, "send Feishu interactive progress cards")
+	accessPreset := fs.String("access", feishuAccessPresetCopilot, "access plan: copilot or public")
 	daemonEnvPath := fs.String("daemon-env-path", "", "PATH for the auto-started daemon (default: current PATH)")
 	debug := fs.Bool("debug", false, "print debug logs for onboarding requests")
 	_ = fs.Parse(args)
@@ -189,10 +194,16 @@ func runFeishuSetup(args []string, requestedMode string) {
 	noStartValue := *noStart
 	daemonEnvPathValue := *daemonEnvPath
 	autoBindChatsValue := *autoBindChats
-	groupReplyAllValue := *groupReplyAll
+	_ = groupReplyAll
+	groupReplyAllValue := false
 	groupContextBufferValue := *groupContextBuffer
 	shareSessionInChannelValue := *shareSessionInChannel
 	enableFeishuCardValue := *enableFeishuCard
+	accessPresetValue, err := parseFeishuSetupAccessPreset(*accessPreset)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
 	setupMode := requestedMode
 
 	initConfigPath(configFileValue)
@@ -210,6 +221,7 @@ func runFeishuSetup(args []string, requestedMode string) {
 			AgentType:              agentTypeValue,
 			WorkDir:                workDirValue,
 			AdminOpenID:            adminOpenIDValue,
+			AccessPreset:           accessPresetValue,
 			AutoBindChats:          autoBindChatsValue,
 			GroupReplyAll:          groupReplyAllValue,
 			GroupContextBuffer:     groupContextBufferValue,
@@ -253,12 +265,12 @@ func runFeishuSetup(args []string, requestedMode string) {
 		groupContextBufferValue = wizardResult.GroupContextBuffer
 		shareSessionInChannelValue = wizardResult.ShareSessionInChannel
 		enableFeishuCardValue = wizardResult.EnableFeishuCard
+		accessPresetValue = normalizeFeishuSetupAccessPreset(wizardResult.AccessPreset)
 		wizardBotPrepared = wizardResult.BotPrepared
 		wizardOwnerOpenID = strings.TrimSpace(wizardResult.OwnerOpenID)
 	}
 
 	var effectiveMode, resolvedAppID, resolvedAppSecret string
-	var err error
 	if wizardBotPrepared {
 		effectiveMode = feishuSetupModeBind
 		resolvedAppID = strings.TrimSpace(appIDValue)
@@ -308,6 +320,7 @@ func runFeishuSetup(args []string, requestedMode string) {
 			if finalPlatformType == "" {
 				finalPlatformType = detectedType
 			}
+			ownerOpenID = strings.TrimSpace(setupWizardFetchAppCreatorOpenID(resolvedAppID, resolvedAppSecret, finalPlatformType))
 			fmt.Printf("Credentials verified for app_id %s.\n", resolvedAppID)
 
 		case feishuSetupModeNew:
@@ -347,6 +360,11 @@ func runFeishuSetup(args []string, requestedMode string) {
 	if adminOpenIDValue != "" && (ownerOpenID == "" || adminOpenIDValue != ownerOpenID) {
 		ownerOpenIDForConfig = adminOpenIDValue
 	}
+	if strings.TrimSpace(ownerOpenIDForConfig) == "" {
+		fmt.Fprintln(os.Stderr, "Error: admin open_id is required but could not be detected automatically.")
+		fmt.Fprintln(os.Stderr, "Use `agentchat setup feishu --admin-open-id <open_id>` or run the wizard and enter it manually.")
+		os.Exit(1)
+	}
 	workDir := workDirValue
 	if strings.TrimSpace(workDir) == "" {
 		workDir = defaultFeishuSetupWorkDir(projectValue)
@@ -375,8 +393,9 @@ func runFeishuSetup(args []string, requestedMode string) {
 		AppSecret:             resolvedAppSecret,
 		OwnerOpenID:           ownerOpenIDForConfig,
 		SetAllowFromEmpty:     *setAllowFromEmpty,
+		AccessPreset:          accessPresetValue,
 		AutoBindChats:         optionalSetupBool(useWizard || explicitFlags["auto-bind-chats"], autoBindChatsValue),
-		GroupReplyAll:         optionalSetupBool(useWizard || explicitFlags["group-reply-all"], groupReplyAllValue),
+		GroupReplyAll:         optionalSetupBool(true, groupReplyAllValue),
 		GroupContextBuffer:    optionalSetupBool(useWizard || explicitFlags["group-context-buffer"], groupContextBufferValue),
 		ShareSessionInChannel: optionalSetupBool(useWizard || explicitFlags["share-session-in-channel"], shareSessionInChannelValue),
 		EnableFeishuCard:      optionalSetupBool(useWizard || explicitFlags["enable-feishu-card"], enableFeishuCardValue),
@@ -456,10 +475,78 @@ func printAllowFromGuidance(ownerOpenID, botOpenID string, result *config.Feishu
 
 	if result.AllowFrom == "" {
 		fmt.Println("💡 默认使用聊天绑定：已设置 admin_from 时，管理员首次有效触发会自动绑定群聊/私聊。")
-		fmt.Println("   非管理员触发未绑定会话时，会回复 chat_id；也可手动加入 allow_group_chats 或 allow_private_chats。")
+		fmt.Println("   非管理员触发未绑定会话时，会回复 chat_id；也可手动加入 public_group_chats、admin_group_chats 或 private_chats。")
 		fmt.Println("   如还需要按用户限制，可发送 /whoami 获取 User ID，再设置 allow_from / admin_from。")
 		fmt.Println()
 	}
+}
+
+func fetchAppCreatorOpenIDForSetup(appID, appSecret, platformType string) string {
+	appID = strings.TrimSpace(appID)
+	appSecret = strings.TrimSpace(appSecret)
+	if appID == "" || appSecret == "" {
+		return ""
+	}
+	base := openFeishuBaseURL
+	if platformType == "lark" {
+		base = openLarkBaseURL
+	}
+	body, _ := json.Marshal(map[string]string{
+		"app_id":     appID,
+		"app_secret": appSecret,
+	})
+	req, err := http.NewRequest(http.MethodPost, base+"/open-apis/auth/v3/tenant_access_token/internal", bytes.NewReader(body))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	var tokenResp tenantTokenResponse
+	if err := json.Unmarshal(data, &tokenResp); err != nil || tokenResp.Code != 0 || tokenResp.TenantAccessToken == "" {
+		return ""
+	}
+
+	infoURL := fmt.Sprintf("%s/open-apis/application/v6/applications/%s?user_id_type=open_id", base, url.PathEscape(appID))
+	infoReq, err := http.NewRequest(http.MethodGet, infoURL, nil)
+	if err != nil {
+		return ""
+	}
+	infoReq.Header.Set("Authorization", "Bearer "+tokenResp.TenantAccessToken)
+
+	infoResp, err := client.Do(infoReq)
+	if err != nil {
+		return ""
+	}
+	defer infoResp.Body.Close()
+	infoData, _ := io.ReadAll(io.LimitReader(infoResp.Body, 1<<20))
+
+	var result struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			App struct {
+				CreatorID string `json:"creator_id"`
+				Owner     struct {
+					OwnerID string `json:"owner_id"`
+				} `json:"owner"`
+			} `json:"app"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(infoData, &result); err != nil || result.Code != 0 {
+		return ""
+	}
+	if ownerID := strings.TrimSpace(result.Data.App.Owner.OwnerID); ownerID != "" {
+		return ownerID
+	}
+	return strings.TrimSpace(result.Data.App.CreatorID)
 }
 
 func fetchBotOpenIDForSetup(appID, appSecret, platformType string) string {

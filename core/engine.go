@@ -757,7 +757,7 @@ func (e *Engine) SetAdminFrom(adminFrom string) {
 	shellDisabled := e.disabledCmds["shell"]
 	e.userRolesMu.Unlock()
 	if af == "" && !shellDisabled {
-		slog.Warn("admin_from is not set — privileged commands (/shell, /show, /dir, /restart, /upgrade) are blocked. "+
+		slog.Warn("admin_from is not set — privileged commands (/shell, /show, /dir, /restart, /upgrade, /group) are blocked. "+
 			"Set admin_from in config to enable them, or use disabled_commands to hide them.",
 			"project", e.name)
 	}
@@ -771,6 +771,7 @@ var privilegedCommands = map[string]bool{
 	"restart": true,
 	"upgrade": true,
 	"diff":    true,
+	"group":   true,
 }
 
 // isAdmin checks whether the given user ID is authorized for privileged commands.
@@ -3472,6 +3473,7 @@ var builtinCommands = []struct {
 	{[]string{"alias"}, "alias"},
 	{[]string{"delete", "del", "rm"}, "delete"},
 	{[]string{"bind"}, "bind"},
+	{[]string{"group"}, "group"},
 	{[]string{"search", "find"}, "search"},
 	{[]string{"shell", "sh", "exec", "run"}, "shell"},
 	{[]string{"show"}, "show"},
@@ -3657,6 +3659,8 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		e.cmdDelete(p, msg, args)
 	case "bind":
 		e.cmdBind(p, msg, args)
+	case "group":
+		e.cmdGroup(p, msg, args)
 	case "search":
 		e.cmdSearch(p, msg, args)
 	case "shell":
@@ -3712,6 +3716,48 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		return false
 	}
 	return true
+}
+
+func (e *Engine) cmdGroup(p Platform, msg *Message, args []string) {
+	switcher, ok := p.(GroupModeSwitcher)
+	if !ok {
+		e.reply(p, msg.ReplyCtx, "当前平台不支持 /group。")
+		return
+	}
+	if len(args) == 0 {
+		result, err := switcher.CurrentGroupMode(e.ctx, msg.ReplyCtx, msg.SessionKey)
+		if err != nil {
+			e.reply(p, msg.ReplyCtx, fmt.Sprintf("读取群聊模式失败：%v", err))
+			return
+		}
+		mode := result.Mode
+		if mode == "" {
+			mode = "admin"
+		}
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf("当前群聊模式：`%s`\n\n可用命令：\n/group admin  - 仅管理员可以 @ 我\n/group public - 群成员都可以 @ 我", mode))
+		return
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(args[0]))
+	switch mode {
+	case "admin", "admin_group":
+		mode = "admin"
+	case "public", "public_group":
+		mode = "public"
+	default:
+		e.reply(p, msg.ReplyCtx, "用法：/group admin 或 /group public")
+		return
+	}
+	result, err := switcher.SetGroupMode(e.ctx, msg.ReplyCtx, msg.SessionKey, msg.UserID, mode)
+	if err != nil {
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf("切换群聊模式失败：%v", err))
+		return
+	}
+	if result.Mode == "public" {
+		e.reply(p, msg.ReplyCtx, fmt.Sprintf("已将群聊 `%s` 切换为 `public_group`：群成员都可以 @ 我使用。", result.ChatID))
+		return
+	}
+	e.reply(p, msg.ReplyCtx, fmt.Sprintf("已将群聊 `%s` 切换为 `admin_group`：仅管理员可以 @ 我使用。", result.ChatID))
 }
 
 func (e *Engine) handleWorkspaceCommand(p Platform, msg *Message, args []string) {
