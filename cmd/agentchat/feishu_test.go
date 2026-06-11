@@ -559,10 +559,14 @@ func TestBuildFeishuPermissionGuidanceForFileDownloadFeature(t *testing.T) {
 	requireStringSliceContains(t, guidance.Scopes, "im:message")
 	requireStringSliceContains(t, guidance.Scopes, "im:message.group_at_msg:readonly")
 	requireStringSliceContains(t, guidance.Scopes, "im:message.p2p_msg:readonly")
+	requireStringSliceContains(t, guidance.Scopes, "im:resource")
 	requireStringSliceNotContains(t, guidance.Scopes, "im:message.group_msg")
 	requireStringSliceContains(t, guidance.Events, "im.message.receive_v1")
 	if !strings.Contains(guidance.ScopeApplyURL, "im%3Amessage") {
 		t.Fatalf("ScopeApplyURL should include encoded im:message scope: %s", guidance.ScopeApplyURL)
+	}
+	if !strings.Contains(guidance.ScopeApplyURL, "im%3Aresource") {
+		t.Fatalf("ScopeApplyURL should include encoded im:resource scope: %s", guidance.ScopeApplyURL)
 	}
 }
 

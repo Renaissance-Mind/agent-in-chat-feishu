@@ -751,6 +751,7 @@ func feishuPermissionFeatureScopes(features []string) ([]string, []string) {
 				"im:message.group_at_msg.include_bot:readonly",
 				"im:message.group_at_msg:readonly",
 				"im:message.p2p_msg:readonly",
+				"im:resource",
 			)
 			addEvents("im.message.receive_v1")
 		case "full-group-context", "group-context", "history":
