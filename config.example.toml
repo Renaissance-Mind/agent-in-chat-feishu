@@ -1,6 +1,6 @@
 # agent-in-chat-feishu configuration
 #
-# `agentchat feishu setup` is the recommended way to create this file.
+# `agentchat setup feishu` is the recommended way to create this file.
 # Strings support ${ENV_VAR} substitution.
 
 language = "zh"

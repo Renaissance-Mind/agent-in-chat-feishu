@@ -24,7 +24,7 @@ Put Codex, Claude Code, and other coding agents into the Feishu chat loop your t
 - 🚀 Foolproof out-of-the-box setup: install and create a bot with one command `npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu`
 - 🤖 Multiple bots can coexist: the bot can see messages from other bots
 - 🧠 Full context: non-@ messages also enter the context, and execution is triggered when the bot is @mentioned
-- 🍎 Currently tested mainly on MacOS + Codex
+- 🍎 Currently tested mainly on macOS + Codex
 
 `agent-in-chat-feishu` is a Feishu/Lark-only distribution derived from cc-connect. It keeps the mature agent runtime, sessions, slash commands, providers, progress cards, attachments, cron jobs, relay, management API, and multi-agent support, while removing the concrete adapters for other chat apps and the unused browser admin UI.
 
@@ -67,9 +67,18 @@ Progress cards from this or other bots are skipped. Sender names come from the l
 
 ## 📦 Installation
 
+Setup connects the bot to your local Codex CLI by default. Before running it, make sure `codex` is installed, logged in, and available in your current shell `PATH`.
+
+For a new user, install the CLI and start the guided Feishu/Lark setup in one command:
+
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu@latest
-agentchat --help
+npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu
+```
+
+If the package is already installed, run only:
+
+```bash
+agentchat setup feishu
 ```
 
 The npm release installs the matching platform binary from npm optional dependencies, so install does not fetch the CLI from GitHub Releases.
@@ -85,19 +94,36 @@ make build
 
 ## 🚀 Quick Start
 
-Create or connect a Feishu/Lark bot and write the project config:
+Create or connect a Feishu/Lark bot and write the default Codex config:
 
 ```bash
 agentchat setup feishu
 ```
 
-Connect an existing app:
+To connect an existing Feishu/Lark app instead of creating one during QR onboarding:
 
 ```bash
 agentchat setup feishu --app cli_xxx:sec_xxx
 ```
 
-`agentchat setup feishu` is the recommended path. It uses Codex as the default agent. Without `--project`, it creates the local bot profile `feishu` and sets its initial work directory to `~/.agentchat/feishu/` next to the config file. That directory is only the starting workspace; you can switch to the real code repository later from chat with `/dir` or `/workspace`. The command writes the platform config, installs/starts the background service, opens the permission confirmation page when possible, and prints the direct permission confirmation link as the final step. QR onboarding usually creates the bot app with core capabilities; when binding an existing app, open the final `scope-apply` permission confirmation link, verify long-connection events, then publish a new app version if Feishu asks for one. You can reprint the links later with `agentchat feishu permissions`, or request tenant approval through the official API with `agentchat feishu permissions --apply`.
+`agentchat setup feishu` is the recommended path. It uses Codex as the default agent. Without `--project`, it creates the local bot profile `feishu` and sets its initial work directory to `~/.agentchat/feishu/` next to the config file. That directory is only the starting workspace; you can switch to the real code repository later from chat with `/dir` or `/workspace`.
+
+During setup, agentchat will:
+
+- create or bind the Feishu/Lark bot app
+- write the platform credentials into `~/.agentchat/config.toml`
+- install and start the background daemon
+- open the permission confirmation page when possible
+- print the direct `scope-apply` permission confirmation link as the final step
+
+You need to:
+
+- complete the Feishu/Lark login or QR confirmation when prompted
+- open the final permission confirmation link and approve the preselected scopes
+- publish a new app version if Feishu asks for one after permissions or events change
+- add the bot to a group or DM and mention it to test
+
+You can reprint the links later with `agentchat feishu permissions`, or request tenant approval through the official API with `agentchat feishu permissions --apply`.
 
 `agentchat feishu setup` remains supported as a compatibility alias.
 

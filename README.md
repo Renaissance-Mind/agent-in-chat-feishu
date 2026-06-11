@@ -21,10 +21,10 @@
 
 ## 🌟 Highlights
 
-- 🚀 傻瓜式开箱即用：一行命令安装并创建机器人`npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu`
+- 🚀 傻瓜式开箱即用：一行命令安装并创建机器人 `npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu`
 - 🤖 多机器人共存：机器人可以看到其他机器人消息
-- 🧠 全量上下文：非@的信息也会进入上下文，在@机器人的时候触发执行
-- 🍎 目前主要在MacOS + Codex环境下被测试
+- 🧠 全量上下文：非 @ 消息也会进入上下文，在 @ 机器人时触发执行
+- 🍎 目前主要在 macOS + Codex 环境下被测试
 
 `agent-in-chat-feishu` 是从 cc-connect 派生出来的飞书/Lark 专用版本。它保留成熟的 Agent 运行时、会话、斜杠命令、模型提供方、进度卡片、附件、定时任务、relay、management API 和多 Agent 支持，同时移除了其他聊天软件的具体适配器以及未使用的浏览器管理前端。
 
@@ -67,9 +67,18 @@ Alex：看下最近配置和日志，告诉我们怎么修。
 
 ## 📦 安装
 
+默认会连接本机 Codex。运行前请先确认 `codex` 命令已经安装、登录，并且在当前 shell 的 `PATH` 里可用。
+
+首次安装并开始配置飞书机器人，只需要一句命令：
+
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu@latest
-agentchat --help
+npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu
+```
+
+如果已经安装过 npm 包，只需要运行：
+
+```bash
+agentchat setup feishu
 ```
 
 npm 包会通过 npm optional dependencies 安装当前系统对应的平台二进制，不会在安装时再从 GitHub Releases 下载 CLI。
@@ -85,19 +94,36 @@ make build
 
 ## 🚀 快速开始
 
-新建或连接飞书/Lark 机器人，并写入项目配置：
+新建或连接飞书/Lark 机器人，并写入默认 Codex 配置：
 
 ```bash
 agentchat setup feishu
 ```
 
-关联已有应用：
+如果要关联已有飞书/Lark 应用，而不是通过扫码流程新建：
 
 ```bash
 agentchat setup feishu --app cli_xxx:sec_xxx
 ```
 
-推荐使用 `agentchat setup feishu`，默认连接 Codex。不传 `--project` 时，它会创建本地机器人配置 `feishu`，并把默认工作目录设为配置同级的 `~/.agentchat/feishu/`；这个目录只是初始工作区，之后可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。命令会写入平台配置，默认安装/启动后台服务，尽量自动打开权限确认页面，并把权限确认直达链接作为最后一步打印出来；setup 成功后 `agentchat` 已在后台运行。扫码新建通常会创建机器人应用并预配核心能力；关联已有应用时，打开最后打印的 `scope-apply` 权限确认直达链接，再核验长连接事件订阅。如果飞书提示需要发布新版本，补权限或事件后要创建版本并发布。之后也可以用 `agentchat feishu permissions` 重新打印这些链接，或用 `agentchat feishu permissions --apply` 通过官方接口向租户管理员发起权限申请。
+推荐使用 `agentchat setup feishu`，默认连接 Codex。不传 `--project` 时，它会创建本地机器人配置 `feishu`，并把默认工作目录设为配置同级的 `~/.agentchat/feishu/`；这个目录只是初始工作区，之后可以在聊天里用 `/dir` 或 `/workspace` 切换到真正要操作的代码仓库。
+
+setup 过程中，agentchat 会自动：
+
+- 新建或绑定飞书/Lark 机器人应用
+- 把平台凭据写入 `~/.agentchat/config.toml`
+- 安装并启动后台 daemon
+- 尽量自动打开权限确认页面
+- 把 `scope-apply` 权限确认直达链接作为最后一步打印出来
+
+用户需要做的是：
+
+- 按终端提示完成飞书/Lark 登录或扫码确认
+- 打开最后打印的权限确认链接，确认预选权限
+- 如果飞书提示权限或事件变更后需要发布新版本，就创建版本并发布
+- 把机器人拉进群或打开私聊，@ 它测试
+
+之后也可以用 `agentchat feishu permissions` 重新打印这些链接，或用 `agentchat feishu permissions --apply` 通过官方接口向租户管理员发起权限申请。
 
 `agentchat feishu setup` 仍作为兼容写法保留。
 
@@ -172,6 +198,8 @@ reaction_emoji = "OnIt"
 ```
 
 默认配置和运行数据目录是 `~/.agentchat`。更完整的飞书专用示例见 [config.example.toml](config.example.toml)。
+
+启用 `group_context_buffer = true` 时，飞书群历史会按群缓存。第一次 @ 会给 Agent 补齐近期背景；同一个运行会话里的后续 @ 只注入新增群消息，已经发送给 Codex 的历史不会重复进入下一轮对话。
 
 ## 🔐 飞书权限
 

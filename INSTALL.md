@@ -7,7 +7,7 @@
 ## 1. Install
 
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu
+npm install -g @renaissancemind/agent-in-chat-feishu@latest
 agentchat --help
 ```
 
@@ -82,7 +82,9 @@ agentchat setup feishu --app cli_xxx:sec_xxx
 
 `agentchat setup feishu` is the default path and uses Codex as the default agent. Without `--project`, it creates a local bot profile named `feishu` and sets its initial work directory to `~/.agentchat/feishu/` next to the config file. That directory is only the starting workspace; users can switch to the real code repository later from chat with `/dir` or `/workspace`. The command creates the project/platform config if needed, writes credentials into `config.toml`, installs/starts the background service, opens the permission confirmation page when possible, and prints the direct permission confirmation link as the final step.
 
-For QR onboarding, Feishu usually provisions the bot app and core capabilities during the registration flow. For an existing app, run `setup feishu --app ...`, open the final `scope-apply` permission confirmation link to confirm the preselected scopes, verify long-connection event delivery, and publish a new version if Feishu asks for one. If the config contains `app_secret`, `agentchat feishu permissions --apply` can also request tenant approval through Feishu's official permission-apply API.
+The user-facing work is small: complete the Feishu/Lark login or QR confirmation, open the final `scope-apply` permission confirmation link, approve the preselected scopes, then add the bot to a chat and mention it.
+
+For QR onboarding, Feishu usually provisions the bot app and core capabilities during the registration flow. For an existing app, run `setup feishu --app ...`, verify long-connection event delivery, and publish a new version if Feishu asks for one after permission or event changes. If the config contains `app_secret`, `agentchat feishu permissions --apply` can also request tenant approval through Feishu's official permission-apply API.
 
 New Feishu projects default to chat binding, not allow-all. If `admin_from` is set, the first valid trigger from that admin auto-binds the group or DM and persists the `chat_id`. Non-admin triggers receive the `chat_id` so it can be added manually.
 
