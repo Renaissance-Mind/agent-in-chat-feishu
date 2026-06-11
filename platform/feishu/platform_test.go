@@ -209,6 +209,29 @@ func TestFeishu_EmptyChatBindingListsDenyAll(t *testing.T) {
 	}
 }
 
+func TestFeishu_LegacyChatBindingKeysStillLoad(t *testing.T) {
+	pAny, err := New(map[string]any{
+		"app_id":              "cli_xxx",
+		"app_secret":          "secret",
+		"allow_private_chats": "oc_private",
+		"allow_group_chats":   "oc_group",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	p := pAny.(*interactivePlatform)
+
+	if !p.chatAccessAllowed("p2p", "oc_private", "ou_guest") {
+		t.Fatal("legacy allow_private_chats should still allow the configured private chat")
+	}
+	if !p.chatAccessAllowed("group", "oc_group", "ou_guest") {
+		t.Fatal("legacy allow_group_chats should still allow the configured group")
+	}
+	if p.chatAccessAllowed("group", "oc_other", "ou_guest") {
+		t.Fatal("legacy configured group list should deny unbound groups")
+	}
+}
+
 func TestFeishu_ChatBindingFallsBackToAllowFromWhenUnset(t *testing.T) {
 	pAny, err := New(map[string]any{
 		"app_id":     "cli_xxx",

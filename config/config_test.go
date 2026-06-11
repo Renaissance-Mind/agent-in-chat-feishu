@@ -1346,6 +1346,34 @@ admin_group_chats = "oc_group"`, 1))
 	}
 }
 
+func TestSetFeishuGroupModeMigratesLegacyAllowGroupChats(t *testing.T) {
+	configPath := writeConfigFixture(t, strings.Replace(feishuConfigFixture, `app_secret = "old_feishu_secret"`, `app_secret = "old_feishu_secret"
+allow_group_chats = "oc_legacy"`, 1))
+	patchConfigPath(t, configPath)
+
+	result, err := SetFeishuGroupMode(FeishuGroupModeUpdateOptions{
+		ProjectName:   "alpha",
+		PlatformIndex: 1,
+		ChatID:        "oc_legacy",
+		Mode:          "admin",
+	})
+	if err != nil {
+		t.Fatalf("SetFeishuGroupMode(admin) returned error: %v", err)
+	}
+	if result.Mode != "admin" || result.PublicGroupChats != "" || result.AdminGroupChats != "oc_legacy" {
+		t.Fatalf("result = %+v, want legacy group moved to admin_group_chats", result)
+	}
+
+	cfg := readConfigFixture(t, configPath)
+	opts := cfg.Projects[0].Platforms[1].Options
+	if got := stringMapValue(opts, "public_group_chats"); got != "" {
+		t.Fatalf("public_group_chats = %q, want legacy id removed", got)
+	}
+	if got := stringMapValue(opts, "admin_group_chats"); got != "oc_legacy" {
+		t.Fatalf("admin_group_chats = %q, want oc_legacy", got)
+	}
+}
+
 func TestAddFeishuChatBinding_TargetsIndexedPlatform(t *testing.T) {
 	configPath := writeConfigFixture(t, feishuConfigFixture)
 	patchConfigPath(t, configPath)
