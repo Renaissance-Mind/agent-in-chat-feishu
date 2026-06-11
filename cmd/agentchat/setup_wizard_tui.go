@@ -32,8 +32,6 @@ const (
 	setupStepAutoBind
 	setupStepGroupMode
 	setupStepGroupContext
-	setupStepGroupSession
-	setupStepCards
 	setupStepService
 	setupStepSummary
 )
@@ -196,7 +194,7 @@ func (m setupWizardTUIModel) View() string {
 	}
 	main := m.renderMain(mainWidth)
 	status := m.renderStatus(width)
-	footer := setupTUIDimStyle.Render("enter select/next | esc back | q quit | arrows/j/k navigate")
+	footer := setupTUIDimStyle.Render("enter 选择/下一步 select/next | esc 返回 back | q 退出 quit | arrows/j/k 移动 navigate")
 	body := lipgloss.JoinHorizontal(lipgloss.Top, sidebar, "  ", main)
 	return strings.Join([]string{header, body, status, footer}, "\n")
 }
@@ -415,28 +413,26 @@ func (m *setupWizardTUIModel) syncCurrentStep() {
 
 func (m setupWizardTUIModel) steps() []setupWizardStep {
 	steps := []setupWizardStep{
-		{ID: setupStepConfig, Kind: setupStepText, Title: "Config file", Hint: "Where agentchat stores credentials and local profiles."},
-		{ID: setupStepMode, Kind: setupStepChoice, Title: "Bot setup mode", Hint: "Create a bot through QR onboarding or connect an existing app."},
+		{ID: setupStepConfig, Kind: setupStepText, Title: "配置文件 / Config file", Hint: "保存凭证与本地配置。 / Where agentchat stores credentials and local profiles."},
+		{ID: setupStepMode, Kind: setupStepChoice, Title: "机器人设置模式 / Bot setup mode", Hint: "扫码创建机器人，或连接已有应用。 / Create by QR onboarding or connect an existing app."},
 	}
 	if !m.cfg.BotPrepared && m.cfg.Mode == feishuSetupModeBind {
 		steps = append(steps,
-			setupWizardStep{ID: setupStepAppID, Kind: setupStepText, Title: "App ID", Hint: "Feishu/Lark app_id, for example cli_xxx."},
-			setupWizardStep{ID: setupStepAppSecret, Kind: setupStepText, Title: "App Secret", Hint: "Feishu/Lark app_secret. Input is masked."},
-			setupWizardStep{ID: setupStepPlatform, Kind: setupStepChoice, Title: "Platform", Hint: "Auto-detect validates credentials against both Feishu and Lark."},
+			setupWizardStep{ID: setupStepAppID, Kind: setupStepText, Title: "应用 ID / App ID", Hint: "飞书/Lark app_id，例如 cli_xxx。 / Feishu/Lark app_id, for example cli_xxx."},
+			setupWizardStep{ID: setupStepAppSecret, Kind: setupStepText, Title: "应用密钥 / App Secret", Hint: "飞书/Lark app_secret，输入会隐藏。 / Feishu/Lark app_secret. Input is masked."},
+			setupWizardStep{ID: setupStepPlatform, Kind: setupStepChoice, Title: "平台 / Platform", Hint: "自动检测会同时校验飞书和 Lark。 / Auto-detect validates both Feishu and Lark."},
 		)
 	}
 	steps = append(steps,
-		setupWizardStep{ID: setupStepProject, Kind: setupStepText, Title: "Local profile", Hint: "A local bot profile name in config.toml."},
-		setupWizardStep{ID: setupStepAgent, Kind: setupStepChoice, Title: "Agent", Hint: "Which local agent CLI should receive messages."},
-		setupWizardStep{ID: setupStepWorkDir, Kind: setupStepText, Title: "Workspace", Hint: "Initial directory for the local agent."},
-		setupWizardStep{ID: setupStepAdmin, Kind: setupStepText, Title: "Admin open_id", Hint: "Blank keeps QR creator auto-detection when available."},
-		setupWizardStep{ID: setupStepAutoBind, Kind: setupStepChoice, Title: "Auto-bind chats", Hint: "Admins can bind private chats and groups on first use."},
-		setupWizardStep{ID: setupStepGroupMode, Kind: setupStepChoice, Title: "Group trigger", Hint: "Mention-only is quieter and safer for busy groups."},
-		setupWizardStep{ID: setupStepGroupContext, Kind: setupStepChoice, Title: "Group history context", Hint: "Include recent non-mention messages as background context."},
-		setupWizardStep{ID: setupStepGroupSession, Kind: setupStepChoice, Title: "Shared group session", Hint: "Use one agent session per group chat."},
-		setupWizardStep{ID: setupStepCards, Kind: setupStepChoice, Title: "Progress cards", Hint: "Send Feishu interactive progress cards."},
-		setupWizardStep{ID: setupStepService, Kind: setupStepChoice, Title: "Background service", Hint: "Install and start the daemon after writing config."},
-		setupWizardStep{ID: setupStepSummary, Kind: setupStepSummaryKind, Title: "Summary", Hint: "Review and write config."},
+		setupWizardStep{ID: setupStepProject, Kind: setupStepText, Title: "本地配置名 / Local profile", Hint: "config.toml 里的本地机器人配置名。 / A local bot profile name in config.toml."},
+		setupWizardStep{ID: setupStepAgent, Kind: setupStepChoice, Title: "Agent 类型 / Agent", Hint: "接收消息的本地 Agent CLI。 / Which local agent CLI should receive messages."},
+		setupWizardStep{ID: setupStepWorkDir, Kind: setupStepText, Title: "工作目录 / Workspace", Hint: "本地 Agent 的初始目录。 / Initial directory for the local agent."},
+		setupWizardStep{ID: setupStepAdmin, Kind: setupStepText, Title: "管理员 open_id / Admin open_id", Hint: "留空时使用扫码创建者。 / Blank keeps QR creator auto-detection when available."},
+		setupWizardStep{ID: setupStepAutoBind, Kind: setupStepChoice, Title: "自动绑定会话 / Auto-bind chats", Hint: "管理员首次使用时可绑定私聊或群聊。 / Admins can bind private chats and groups on first use."},
+		setupWizardStep{ID: setupStepGroupMode, Kind: setupStepChoice, Title: "群聊触发 / Group trigger", Hint: "仅 @ 回复适合大多数群聊。 / Mention-only is quieter and safer for busy groups."},
+		setupWizardStep{ID: setupStepGroupContext, Kind: setupStepChoice, Title: "群聊上下文 / Group history context", Hint: "把近期非 @ 消息作为背景上下文。 / Include recent non-mention messages as background context."},
+		setupWizardStep{ID: setupStepService, Kind: setupStepChoice, Title: "后台服务 / Background service", Hint: "写入配置后安装并启动 daemon。 / Install and start the daemon after writing config."},
+		setupWizardStep{ID: setupStepSummary, Kind: setupStepSummaryKind, Title: "摘要 / Summary", Hint: "确认并写入配置。 / Review and write config."},
 	)
 	return steps
 }
@@ -520,7 +516,7 @@ func (m setupWizardTUIModel) renderTextStep(width int) []string {
 		lines = append(lines, "", setupTUIDimStyle.Render(defaultHint))
 	}
 	if m.currentStep().ID == setupStepAdmin {
-		lines = append(lines, setupTUIDimStyle.Render("Leave blank to use the QR setup owner when Feishu returns it."))
+		lines = append(lines, setupTUIDimStyle.Render("留空则使用扫码创建者 open_id。 / Leave blank to use the QR setup owner."))
 	}
 	_ = width
 	return lines
@@ -590,12 +586,12 @@ func (m setupWizardTUIModel) renderChoiceStep(stepID setupWizardStepID, width in
 
 func (m setupWizardTUIModel) renderRegistrationExecStep(width int) []string {
 	lines := []string{
-		setupTUISelectedStyle.Render("Opening QR onboarding..."),
+		setupTUISelectedStyle.Render("正在打开扫码创建 / Opening QR onboarding..."),
 		"",
-		"The wizard is pausing the TUI so the terminal can show a clean QR code.",
-		"The QR code and creation link will appear below; scan it in Feishu/Lark.",
+		"Wizard 会暂停 TUI，让终端完整显示二维码。 / The wizard pauses the TUI so the terminal can show a clean QR code.",
+		"下方会出现二维码和创建链接，请用飞书/Lark 扫码。 / The QR code and creation link will appear below; scan it in Feishu/Lark.",
 		"",
-		setupTUIDimStyle.Render("After authorization completes, this wizard will resume automatically."),
+		setupTUIDimStyle.Render("授权完成后 wizard 会自动继续。 / After authorization completes, this wizard will resume automatically."),
 	}
 	_ = width
 	return lines
@@ -603,26 +599,24 @@ func (m setupWizardTUIModel) renderRegistrationExecStep(width int) []string {
 
 func (m setupWizardTUIModel) renderSummaryStep(width int) []string {
 	lines := []string{
-		setupTUIAccentSoftStyle.Render("Configuration"),
-		m.summaryLine("Config", m.cfg.ConfigPath),
-		m.summaryLine("Bot", formatSetupWizardMode(m.cfg.Mode)),
-		m.summaryLine("Platform", formatSetupWizardPlatform(m.cfg.PlatformType)),
-		m.summaryLine("Profile", m.cfg.Project),
-		m.summaryLine("Agent", m.cfg.AgentType),
-		m.summaryLine("Workspace", m.cfg.WorkDir),
+		setupTUIAccentSoftStyle.Render("配置 / Configuration"),
+		m.summaryLine("配置文件 / Config", m.cfg.ConfigPath),
+		m.summaryLine("机器人 / Bot", formatSetupWizardMode(m.cfg.Mode)),
+		m.summaryLine("平台 / Platform", formatSetupWizardPlatform(m.cfg.PlatformType)),
+		m.summaryLine("配置名 / Profile", m.cfg.Project),
+		m.summaryLine("Agent 类型 / Agent", m.cfg.AgentType),
+		m.summaryLine("工作目录 / Workspace", m.cfg.WorkDir),
 		"",
-		setupTUIAccentSoftStyle.Render("Access"),
-		m.summaryLine("Admin", formatSetupWizardAdmin(m.cfg.AdminOpenID)),
-		m.summaryLine("Creator open_id", formatSetupWizardOptional(m.cfg.OwnerOpenID)),
-		m.summaryLine("Auto-bind", formatWizardBool(m.cfg.AutoBindChats)),
-		m.summaryLine("Group trigger", formatSetupWizardGroupTrigger(m.cfg.GroupReplyAll)),
-		m.summaryLine("History context", formatWizardBool(m.cfg.GroupContextBuffer)),
-		m.summaryLine("Shared group", formatWizardBool(m.cfg.ShareSessionInChannel)),
-		m.summaryLine("Cards", formatWizardBool(m.cfg.EnableFeishuCard)),
-		m.summaryLine("Service", formatSetupWizardService(m.cfg.InstallAndStartService)),
+		setupTUIAccentSoftStyle.Render("访问 / Access"),
+		m.summaryLine("管理员 / Admin", formatSetupWizardAdmin(m.cfg.AdminOpenID)),
+		m.summaryLine("创建者 / Creator", formatSetupWizardOptional(m.cfg.OwnerOpenID)),
+		m.summaryLine("自动绑定 / Auto-bind", formatWizardBool(m.cfg.AutoBindChats)),
+		m.summaryLine("群聊触发 / Trigger", formatSetupWizardGroupTrigger(m.cfg.GroupReplyAll)),
+		m.summaryLine("群聊上下文 / Context", formatWizardBool(m.cfg.GroupContextBuffer)),
+		m.summaryLine("后台服务 / Service", formatSetupWizardService(m.cfg.InstallAndStartService)),
 		"",
 	}
-	actions := []string{"Write config", "Go back"}
+	actions := []string{"写入配置 / Write config", "返回修改 / Go back"}
 	for i, action := range actions {
 		prefix := "  "
 		style := setupTUIDimStyle
@@ -647,10 +641,10 @@ func (m setupWizardTUIModel) renderStatus(width int) string {
 		formatSetupWizardService(m.cfg.InstallAndStartService),
 	)
 	if step.ID == setupStepSummary {
-		status = "ready to write config"
+		status = "准备写入配置 / ready to write config"
 	}
 	if m.preparingBot {
-		status = "waiting for QR onboarding"
+		status = "等待扫码创建 / waiting for QR onboarding"
 	}
 	return setupTUIDimStyle.Width(width).Render(status)
 }
@@ -704,12 +698,12 @@ func (m setupWizardTUIModel) textPlaceholder(stepID setupWizardStepID) string {
 func (m setupWizardTUIModel) textDefaultHint(stepID setupWizardStepID) string {
 	switch stepID {
 	case setupStepConfig:
-		return "This file may contain app_secret; keep it private."
+		return "该文件会保存 app_secret，请妥善保管。 / This file may contain app_secret; keep it private."
 	case setupStepWorkDir:
 		if m.projectDefaulted && !m.projectEdited {
-			return "Default profile uses a workspace next to config.toml."
+			return "默认配置会在 config.toml 旁创建工作目录。 / Default profile uses a workspace next to config.toml."
 		}
-		return "Explicit profiles default to the current directory unless changed."
+		return "显式配置默认使用当前目录，除非手动修改。 / Explicit profiles default to the current directory unless changed."
 	default:
 		return ""
 	}
@@ -820,26 +814,26 @@ func (m setupWizardTUIModel) currentChoices(stepID setupWizardStepID) []setupCho
 	switch stepID {
 	case setupStepMode:
 		return []setupChoice{
-			{Key: "create", Label: "Create new bot", Hint: "QR onboarding"},
-			{Key: "connect", Label: "Connect existing bot", Hint: "app_id/app_secret"},
+			{Key: "create", Label: "扫码创建新机器人 / Create new bot", Hint: "扫码授权 / QR onboarding"},
+			{Key: "connect", Label: "连接已有机器人 / Connect existing bot", Hint: "app_id/app_secret"},
 		}
 	case setupStepPlatform:
 		return []setupChoice{
-			{Key: "auto", Label: "Auto-detect", Hint: "Feishu or Lark"},
-			{Key: "feishu", Label: "Feishu"},
-			{Key: "lark", Label: "Lark"},
+			{Key: "auto", Label: "自动检测 / Auto-detect", Hint: "飞书或 Lark / Feishu or Lark"},
+			{Key: "feishu", Label: "飞书 / Feishu"},
+			{Key: "lark", Label: "Lark / Lark"},
 		}
 	case setupStepAgent:
 		return setupAgentChoices()
-	case setupStepAutoBind, setupStepGroupContext, setupStepGroupSession, setupStepCards, setupStepService:
+	case setupStepAutoBind, setupStepGroupContext, setupStepService:
 		return []setupChoice{
-			{Key: "yes", Label: "Yes"},
-			{Key: "no", Label: "No"},
+			{Key: "yes", Label: "是 / Yes"},
+			{Key: "no", Label: "否 / No"},
 		}
 	case setupStepGroupMode:
 		return []setupChoice{
-			{Key: "mention", Label: "Mention only", Hint: "recommended"},
-			{Key: "all", Label: "Every group message", Hint: "noisy"},
+			{Key: "mention", Label: "仅 @ 时回复 / Mention only", Hint: "推荐 / recommended"},
+			{Key: "all", Label: "每条群消息 / Every group message", Hint: "较吵 / noisy"},
 		}
 	default:
 		return nil
@@ -880,10 +874,6 @@ func (m setupWizardTUIModel) selectedChoiceKey(stepID setupWizardStepID) string 
 		return "mention"
 	case setupStepGroupContext:
 		return boolChoiceKey(m.cfg.GroupContextBuffer)
-	case setupStepGroupSession:
-		return boolChoiceKey(m.cfg.ShareSessionInChannel)
-	case setupStepCards:
-		return boolChoiceKey(m.cfg.EnableFeishuCard)
 	case setupStepService:
 		return boolChoiceKey(m.cfg.InstallAndStartService)
 	default:
@@ -915,10 +905,6 @@ func (m *setupWizardTUIModel) applyChoice(stepID setupWizardStepID, key string) 
 		m.cfg.GroupReplyAll = key == "all"
 	case setupStepGroupContext:
 		m.cfg.GroupContextBuffer = key == "yes"
-	case setupStepGroupSession:
-		m.cfg.ShareSessionInChannel = key == "yes"
-	case setupStepCards:
-		m.cfg.EnableFeishuCard = key == "yes"
 	case setupStepService:
 		m.cfg.InstallAndStartService = key == "yes"
 	}
@@ -926,7 +912,7 @@ func (m *setupWizardTUIModel) applyChoice(stepID setupWizardStepID, key string) 
 
 func (m setupWizardTUIModel) isBoolChoice(stepID setupWizardStepID) bool {
 	switch stepID {
-	case setupStepAutoBind, setupStepGroupContext, setupStepGroupSession, setupStepCards, setupStepService:
+	case setupStepAutoBind, setupStepGroupContext, setupStepService:
 		return true
 	default:
 		return false
@@ -935,21 +921,21 @@ func (m setupWizardTUIModel) isBoolChoice(stepID setupWizardStepID) bool {
 
 func formatSetupWizardMode(mode string) string {
 	if mode == feishuSetupModeBind {
-		return "connect_existing"
+		return "连接已有 / connect_existing"
 	}
-	return "create_new"
+	return "扫码创建 / create_new"
 }
 
 func formatSetupWizardPlatform(platform string) string {
 	if strings.TrimSpace(platform) == "" {
-		return "auto"
+		return "自动检测 / auto"
 	}
 	return platform
 }
 
 func formatSetupWizardAdmin(admin string) string {
 	if strings.TrimSpace(admin) == "" {
-		return "creator_open_id"
+		return "扫码创建者 / creator_open_id"
 	}
 	return admin
 }
@@ -963,23 +949,23 @@ func formatSetupWizardOptional(value string) string {
 
 func formatSetupWizardBotPrepared(prepared bool) string {
 	if prepared {
-		return "ready"
+		return "已准备 / ready"
 	}
-	return "pending"
+	return "未完成 / pending"
 }
 
 func formatSetupWizardGroupTrigger(replyAll bool) string {
 	if replyAll {
-		return "all_messages"
+		return "每条消息 / all_messages"
 	}
-	return "mention_only"
+	return "仅 @ / mention_only"
 }
 
 func formatSetupWizardService(install bool) string {
 	if install {
-		return "install_and_start"
+		return "安装并启动 / install_and_start"
 	}
-	return "config_only"
+	return "仅写配置 / config_only"
 }
 
 func boolChoiceKey(value bool) string {

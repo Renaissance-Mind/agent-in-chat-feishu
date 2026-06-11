@@ -136,31 +136,31 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 	printWizardIntro(out)
 
 	var err error
-	printWizardSection(out, "Config", "Store credentials and local profile settings.")
-	cfg.ConfigPath, err = promptString(reader, out, "Config file", cfg.ConfigPath)
+	printWizardSection(out, "配置 / Config", "保存凭证与本地机器人配置。 / Store credentials and local profile settings.")
+	cfg.ConfigPath, err = promptString(reader, out, "配置文件 / Config file", cfg.ConfigPath)
 	if err != nil {
 		return cfg, err
 	}
 
-	printWizardSection(out, "Bot", "Create a bot by QR onboarding or connect an existing Feishu/Lark app.")
+	printWizardSection(out, "机器人 / Bot", "扫码创建机器人，或连接已有飞书/Lark 应用。 / Create by QR onboarding or connect an existing Feishu/Lark app.")
 	modeDefault := "create"
 	if cfg.Mode == feishuSetupModeBind || cfg.AppID != "" || cfg.AppSecret != "" {
 		modeDefault = "connect"
 	}
-	mode, err := promptChoice(reader, out, "Bot setup mode", []setupChoice{
-		{Key: "create", Label: "Create a new bot by QR code", Hint: "best for first-time setup"},
-		{Key: "connect", Label: "Connect an existing bot", Hint: "use app_id and app_secret"},
+	mode, err := promptChoice(reader, out, "机器人设置模式 / Bot setup mode", []setupChoice{
+		{Key: "create", Label: "扫码创建新机器人 / Create a new bot by QR code", Hint: "首次配置推荐 / best for first-time setup"},
+		{Key: "connect", Label: "连接已有机器人 / Connect an existing bot", Hint: "使用 app_id 和 app_secret / use app_id and app_secret"},
 	}, modeDefault)
 	if err != nil {
 		return cfg, err
 	}
 	if mode == "connect" {
 		cfg.Mode = feishuSetupModeBind
-		cfg.AppID, err = promptString(reader, out, "App ID", cfg.AppID)
+		cfg.AppID, err = promptString(reader, out, "应用 ID / App ID", cfg.AppID)
 		if err != nil {
 			return cfg, err
 		}
-		cfg.AppSecret, err = promptString(reader, out, "App Secret", cfg.AppSecret)
+		cfg.AppSecret, err = promptString(reader, out, "应用密钥 / App Secret", cfg.AppSecret)
 		if err != nil {
 			return cfg, err
 		}
@@ -178,10 +178,10 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 		if platformDefault == "" {
 			platformDefault = "auto"
 		}
-		platform, err := promptChoice(reader, out, "Platform", []setupChoice{
-			{Key: "auto", Label: "Auto-detect", Hint: "validate credentials against both"},
-			{Key: "feishu", Label: "Feishu"},
-			{Key: "lark", Label: "Lark"},
+		platform, err := promptChoice(reader, out, "平台 / Platform", []setupChoice{
+			{Key: "auto", Label: "自动检测 / Auto-detect", Hint: "同时校验飞书和 Lark / validate credentials against both"},
+			{Key: "feishu", Label: "飞书 / Feishu"},
+			{Key: "lark", Label: "Lark / Lark"},
 		}, platformDefault)
 		if err != nil {
 			return cfg, err
@@ -200,8 +200,8 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 	if projectWasDefaulted {
 		cfg.Project = defaultFeishuProject
 	}
-	printWizardSection(out, "Local agent", "Choose the profile name, agent CLI, and starting workspace.")
-	cfg.Project, err = promptString(reader, out, "Local bot profile name", cfg.Project)
+	printWizardSection(out, "本地 Agent / Local agent", "选择配置名、Agent CLI 和启动目录。 / Choose the profile name, agent CLI, and starting workspace.")
+	cfg.Project, err = promptString(reader, out, "本地机器人配置名 / Local bot profile name", cfg.Project)
 	if err != nil {
 		return cfg, err
 	}
@@ -211,7 +211,7 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 	if agentDefault == "" {
 		agentDefault = "codex"
 	}
-	cfg.AgentType, err = promptChoice(reader, out, "Agent", agentChoices, agentDefault)
+	cfg.AgentType, err = promptChoice(reader, out, "Agent 类型 / Agent", agentChoices, agentDefault)
 	if err != nil {
 		return cfg, err
 	}
@@ -223,60 +223,53 @@ func runFeishuSetupWizardPlain(in io.Reader, out io.Writer, defaults feishuSetup
 		}
 		cfg.WorkDir = defaultFeishuSetupWorkDirForConfig(cfg.ConfigPath, workDirProject)
 	}
-	cfg.WorkDir, err = promptString(reader, out, "Initial workspace", cfg.WorkDir)
+	cfg.WorkDir, err = promptString(reader, out, "初始工作目录 / Initial workspace", cfg.WorkDir)
 	if err != nil {
 		return cfg, err
 	}
 
-	printWizardSection(out, "Chat access", "The default binding model lets admins bind private chats and groups on first use.")
+	printWizardSection(out, "聊天访问 / Chat access", "默认绑定模式允许管理员首次使用时绑定私聊或群聊。 / Admins can bind private chats and groups on first use.")
 	adminDefault := cfg.AdminOpenID
 	if strings.TrimSpace(adminDefault) == "" && strings.TrimSpace(cfg.OwnerOpenID) != "" {
 		adminDefault = cfg.OwnerOpenID
 	}
-	cfg.AdminOpenID, err = promptString(reader, out, "Admin open_id (blank = use creator open_id when QR setup returns it)", adminDefault)
+	cfg.AdminOpenID, err = promptString(reader, out, "管理员 open_id / Admin open_id (留空 = 使用扫码创建者 / blank = QR creator)", adminDefault)
 	if err != nil {
 		return cfg, err
 	}
 
-	cfg.AutoBindChats, err = promptBool(reader, out, "Auto-bind chats by admin", cfg.AutoBindChats)
+	cfg.AutoBindChats, err = promptBool(reader, out, "管理员自动绑定会话 / Auto-bind chats by admin", cfg.AutoBindChats)
 	if err != nil {
 		return cfg, err
 	}
 
-	printWizardSection(out, "Group behavior", "Tune when the bot replies and how much group context is sent to the agent.")
+	printWizardSection(out, "群聊行为 / Group behavior", "设置机器人何时回复，以及发送多少群聊上下文。 / Tune replies and group context sent to the agent.")
 	groupDefault := "mention"
 	if cfg.GroupReplyAll {
 		groupDefault = "all"
 	}
-	groupMode, err := promptChoice(reader, out, "Group trigger mode", []setupChoice{
-		{Key: "mention", Label: "Only respond when mentioned", Hint: "recommended"},
-		{Key: "all", Label: "Respond to every group message", Hint: "busy groups can get noisy"},
+	groupMode, err := promptChoice(reader, out, "群聊触发模式 / Group trigger mode", []setupChoice{
+		{Key: "mention", Label: "仅被 @ 时回复 / Only respond when mentioned", Hint: "推荐 / recommended"},
+		{Key: "all", Label: "每条群消息都回复 / Respond to every group message", Hint: "群聊可能变吵 / busy groups can get noisy"},
 	}, groupDefault)
 	if err != nil {
 		return cfg, err
 	}
 	cfg.GroupReplyAll = groupMode == "all"
 
-	cfg.GroupContextBuffer, err = promptBool(reader, out, "Include recent group history as context", cfg.GroupContextBuffer)
+	cfg.GroupContextBuffer, err = promptBool(reader, out, "包含近期群聊历史作为上下文 / Include recent group history as context", cfg.GroupContextBuffer)
 	if err != nil {
 		return cfg, err
 	}
-	cfg.ShareSessionInChannel, err = promptBool(reader, out, "Share one agent session per group chat", cfg.ShareSessionInChannel)
-	if err != nil {
-		return cfg, err
-	}
-	cfg.EnableFeishuCard, err = promptBool(reader, out, "Enable Feishu progress cards", cfg.EnableFeishuCard)
-	if err != nil {
-		return cfg, err
-	}
-	printWizardSection(out, "Runtime", "Start the daemon now, or write config only and run it manually.")
-	cfg.InstallAndStartService, err = promptBool(reader, out, "Install and start background service", cfg.InstallAndStartService)
+
+	printWizardSection(out, "运行方式 / Runtime", "立即启动后台服务，或只写入配置后手动运行。 / Start the daemon now, or write config only.")
+	cfg.InstallAndStartService, err = promptBool(reader, out, "安装并启动后台服务 / Install and start background service", cfg.InstallAndStartService)
 	if err != nil {
 		return cfg, err
 	}
 
 	printFeishuSetupWizardSummary(out, cfg)
-	confirmed, err := promptBool(reader, out, "Continue and write config", true)
+	confirmed, err := promptBool(reader, out, "继续并写入配置 / Continue and write config", true)
 	if err != nil {
 		return cfg, err
 	}
@@ -439,46 +432,44 @@ func choiceKeys(choices []setupChoice) []string {
 }
 
 func printFeishuSetupWizardSummary(out io.Writer, cfg feishuSetupWizardConfig) {
-	mode := "create_new"
+	mode := "扫码创建 / create_new"
 	if cfg.Mode == feishuSetupModeBind {
-		mode = "connect_existing"
+		mode = "连接已有 / connect_existing"
 	}
 	platform := cfg.PlatformType
 	if platform == "" {
-		platform = "auto"
+		platform = "自动检测 / auto"
 	}
 	admin := cfg.AdminOpenID
 	if admin == "" {
-		admin = "creator_open_id"
+		admin = "扫码创建者 / creator_open_id"
 	}
-	service := "config_only"
+	service := "仅写配置 / config_only"
 	if cfg.InstallAndStartService {
-		service = "install_and_start"
+		service = "安装并启动 / install_and_start"
 	}
-	trigger := "mention_only"
+	trigger := "仅 @ / mention_only"
 	if cfg.GroupReplyAll {
-		trigger = "all_messages"
+		trigger = "每条消息 / all_messages"
 	}
 
-	printWizardSection(out, "Summary", "Review before writing config.")
-	printSummaryField(out, "Config file", cfg.ConfigPath)
-	printSummaryField(out, "Bot setup mode", mode)
-	printSummaryField(out, "Platform", platform)
-	printSummaryField(out, "Local profile", cfg.Project)
-	printSummaryField(out, "Agent", cfg.AgentType)
-	printSummaryField(out, "Initial workspace", cfg.WorkDir)
+	printWizardSection(out, "摘要 / Summary", "写入配置前确认。 / Review before writing config.")
+	printSummaryField(out, "配置文件 / Config file", cfg.ConfigPath)
+	printSummaryField(out, "机器人模式 / Bot mode", mode)
+	printSummaryField(out, "平台 / Platform", platform)
+	printSummaryField(out, "本地配置 / Local profile", cfg.Project)
+	printSummaryField(out, "Agent 类型 / Agent", cfg.AgentType)
+	printSummaryField(out, "工作目录 / Workspace", cfg.WorkDir)
 	fmt.Fprintln(out)
-	printSummaryField(out, "Access mode", "chat_binding")
-	printSummaryField(out, "Admin open_id", admin)
-	printSummaryField(out, "Auto-bind chats", formatWizardBool(cfg.AutoBindChats))
-	printSummaryField(out, "Private chat binding", `allow_private_chats = ""`)
-	printSummaryField(out, "Group chat binding", `allow_group_chats = ""`)
+	printSummaryField(out, "访问模式 / Access mode", "chat_binding")
+	printSummaryField(out, "管理员 open_id / Admin", admin)
+	printSummaryField(out, "自动绑定 / Auto-bind", formatWizardBool(cfg.AutoBindChats))
+	printSummaryField(out, "私聊绑定 / Private binding", `allow_private_chats = ""`)
+	printSummaryField(out, "群聊绑定 / Group binding", `allow_group_chats = ""`)
 	fmt.Fprintln(out)
-	printSummaryField(out, "Group trigger", trigger)
-	printSummaryField(out, "Group history context", formatWizardBool(cfg.GroupContextBuffer))
-	printSummaryField(out, "Shared group session", formatWizardBool(cfg.ShareSessionInChannel))
-	printSummaryField(out, "Progress cards", formatWizardBool(cfg.EnableFeishuCard))
-	printSummaryField(out, "Background service", service)
+	printSummaryField(out, "群聊触发 / Group trigger", trigger)
+	printSummaryField(out, "群聊上下文 / Group context", formatWizardBool(cfg.GroupContextBuffer))
+	printSummaryField(out, "后台服务 / Background service", service)
 	fmt.Fprintln(out)
 }
 
@@ -488,7 +479,7 @@ func printSummaryField(out io.Writer, label, value string) {
 
 func formatWizardBool(value bool) string {
 	if value {
-		return "yes"
+		return "是 / yes"
 	}
-	return "no"
+	return "否 / no"
 }

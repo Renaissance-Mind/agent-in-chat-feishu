@@ -43,7 +43,7 @@ func (m *launchdManager) Install(cfg Config) error {
 	}
 
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
-	if out, err := runLaunchctl("bootstrap", domain, plistPath); err != nil {
+	if out, err := bootstrapLaunchdWithRetry(domain, plistPath); err != nil {
 		return fmt.Errorf("launchctl bootstrap: %s (%w)", out, err)
 	}
 
@@ -94,19 +94,7 @@ func (*launchdManager) Restart() error {
 
 	plistPath := launchdPlistPath()
 
-	// launchd bootout is asynchronous; retry bootstrap with backoff
-	// to avoid "Bootstrap failed: 5" race condition.
-	var out string
-	var err error
-	for i := 0; i < 3; i++ {
-		if i > 0 {
-			time.Sleep(500 * time.Millisecond)
-		}
-		out, err = runLaunchctl("bootstrap", domain, plistPath)
-		if err == nil {
-			break
-		}
-	}
+	out, err := bootstrapLaunchdWithRetry(domain, plistPath)
 	if err != nil {
 		return fmt.Errorf("restart: %s (%w)", out, err)
 	}
@@ -193,8 +181,25 @@ func buildPlist(cfg Config) string {
 `, launchdLabel, cfg.BinaryPath, cfg.WorkDir, cfg.LogFile, cfg.LogMaxSize, envPATH)
 }
 
-func runLaunchctl(args ...string) (string, error) {
+var runLaunchctl = func(args ...string) (string, error) {
 	cmd := exec.Command("launchctl", args...)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+var launchdBootstrapRetryDelay = 500 * time.Millisecond
+
+func bootstrapLaunchdWithRetry(domain, plistPath string) (string, error) {
+	var out string
+	var err error
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			time.Sleep(launchdBootstrapRetryDelay)
+		}
+		out, err = runLaunchctl("bootstrap", domain, plistPath)
+		if err == nil {
+			return out, nil
+		}
+	}
+	return out, err
 }

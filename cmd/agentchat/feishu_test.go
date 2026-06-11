@@ -104,8 +104,6 @@ func TestFeishuSetupWizardCollectsKimiBindConfig(t *testing.T) {
 		"",             // auto-bind chats
 		"",             // group trigger mode
 		"",             // include group history
-		"",             // share group session
-		"",             // progress cards
 		"no",           // install/start service
 		"yes",          // confirm
 	}, "\n") + "\n")
@@ -180,8 +178,6 @@ func TestFeishuSetupWizardDefaultsWorkspaceNextToConfig(t *testing.T) {
 		"",    // auto-bind chats
 		"",    // group trigger mode
 		"",    // include group history
-		"",    // share group session
-		"",    // progress cards
 		"no",  // install/start service
 		"yes", // confirm
 	}, "\n") + "\n")
@@ -229,8 +225,6 @@ func TestFeishuSetupWizardRendersCompactSections(t *testing.T) {
 		"",    // auto-bind chats
 		"",    // group trigger mode
 		"",    // include group history
-		"",    // share group session
-		"",    // progress cards
 		"no",  // install/start service
 		"yes", // confirm
 	}, "\n") + "\n")
@@ -252,20 +246,20 @@ func TestFeishuSetupWizardRendersCompactSections(t *testing.T) {
 	text := out.String()
 	for _, want := range []string{
 		"Agent-in-Chat-Feishu setup",
-		"Config\n  Store credentials",
-		"Bot\n  Create a bot",
-		"Local agent\n  Choose the profile",
-		"Chat access\n  The default binding model",
-		"Group behavior\n  Tune when the bot replies",
-		"Runtime\n  Start the daemon now",
-		"Summary\n  Review before writing config",
+		"配置 / Config\n  保存凭证",
+		"机器人 / Bot\n  扫码创建机器人",
+		"本地 Agent / Local agent\n  选择配置名",
+		"聊天访问 / Chat access\n  默认绑定模式",
+		"群聊行为 / Group behavior\n  设置机器人何时回复",
+		"运行方式 / Runtime\n  立即启动后台服务",
+		"摘要 / Summary\n  写入配置前确认",
 		"Select [create]",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("wizard output missing %q:\n%s", want, text)
 		}
 	}
-	for _, oldMarker := range []string{"? ", "Default:"} {
+	for _, oldMarker := range []string{"? ", "Default:", "Shared group session", "Progress cards", "share group session", "progress cards"} {
 		if strings.Contains(text, oldMarker) {
 			t.Fatalf("wizard output still contains old marker %q:\n%s", oldMarker, text)
 		}
@@ -291,11 +285,14 @@ func TestFeishuSetupWizardTUIViewShowsShellLayout(t *testing.T) {
 	for _, want := range []string{
 		"Agent-in-Chat-Feishu setup - step 1/",
 		"Setup",
-		">  1 Config file",
+		"配置文件 / Config",
 		"Config file",
 		"Where agentchat stores credentials",
-		"profile kimi-profile | agent kimi | mode connect_existing | bot pending | service config_only",
-		"enter select/next | esc back | q quit",
+		"profile kimi-profile | agent kimi",
+		"mode 连接已有 / connect_existing",
+		"bot 未完成 / pending",
+		"service 仅写配置 / config_only",
+		"enter 选择/下一步 select/next",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("TUI view missing %q:\n%s", want, view)
