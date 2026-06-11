@@ -1072,6 +1072,44 @@ func TestSaveFeishuPlatformCredentials_PreservesExistingAdminFrom(t *testing.T) 
 	}
 }
 
+func TestSaveFeishuPlatformCredentials_WritesSetupWizardOptions(t *testing.T) {
+	configPath := writeConfigFixture(t, feishuConfigFixture)
+	patchConfigPath(t, configPath)
+
+	falseValue := false
+	trueValue := true
+	_, err := SaveFeishuPlatformCredentials(FeishuCredentialUpdateOptions{
+		ProjectName:           "alpha",
+		AppID:                 "cli_new_app",
+		AppSecret:             "sec_new_secret",
+		AutoBindChats:         &falseValue,
+		GroupReplyAll:         &trueValue,
+		GroupContextBuffer:    &falseValue,
+		ShareSessionInChannel: &falseValue,
+		EnableFeishuCard:      &falseValue,
+	})
+	if err != nil {
+		t.Fatalf("SaveFeishuPlatformCredentials returned error: %v", err)
+	}
+
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	text := string(raw)
+	for _, want := range []string{
+		`auto_bind_chats = false`,
+		`group_reply_all = true`,
+		`group_context_buffer = false`,
+		`share_session_in_channel = false`,
+		`enable_feishu_card = false`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("config missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestSaveFeishuPlatformCredentials_SelectByIndexAndOverrideType(t *testing.T) {
 	configPath := writeConfigFixture(t, feishuConfigFixture)
 	patchConfigPath(t, configPath)

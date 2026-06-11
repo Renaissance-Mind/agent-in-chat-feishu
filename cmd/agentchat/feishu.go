@@ -151,6 +151,9 @@ func runFeishuSetup(args []string, requestedMode string) {
 	project := fs.String("project", "", "local bot profile name (default: feishu)")
 	platformIndex := fs.Int("platform-index", 0, "1-based index among feishu/lark platforms in the project (0 = first)")
 	platformType := fs.String("platform-type", "", "force platform type: feishu or lark")
+	agentType := fs.String("agent", "", "agent type for a newly-created local profile (default: codex)")
+	workDirFlag := fs.String("work-dir", "", "initial work directory for a newly-created local profile")
+	adminOpenID := fs.String("admin-open-id", "", "seed admin_from with this Feishu/Lark user open_id")
 	app := fs.String("app", "", "existing bot credentials in app_id:app_secret format")
 	appID := fs.String("app-id", "", "existing bot app_id")
 	appSecret := fs.String("app-secret", "", "existing bot app_secret")
@@ -158,30 +161,112 @@ func runFeishuSetup(args []string, requestedMode string) {
 	qrImage := fs.String("qr-image", "", "save QR code as PNG image to this path (e.g. qr.png)")
 	setAllowFromEmpty := fs.Bool("set-allow-from-empty", false, "merge owner open_id into allow_from when onboarding returns it (preserves *)")
 	noStart := fs.Bool("no-start", false, "write config only; do not install/start the background service")
+	wizard := fs.Bool("wizard", false, "run the interactive setup wizard")
+	noWizard := fs.Bool("no-wizard", false, "skip the interactive setup wizard")
+	autoBindChats := fs.Bool("auto-bind-chats", true, "allow admin users to auto-bind new private/group chats")
+	groupReplyAll := fs.Bool("group-reply-all", false, "respond to every group message instead of only mentions")
+	groupContextBuffer := fs.Bool("group-context-buffer", true, "include recent group history as background context")
+	shareSessionInChannel := fs.Bool("share-session-in-channel", true, "share one agent session per group chat")
+	enableFeishuCard := fs.Bool("enable-feishu-card", true, "send Feishu interactive progress cards")
 	daemonEnvPath := fs.String("daemon-env-path", "", "PATH for the auto-started daemon (default: current PATH)")
 	debug := fs.Bool("debug", false, "print debug logs for onboarding requests")
 	_ = fs.Parse(args)
+	explicitFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) {
+		explicitFlags[f.Name] = true
+	})
 
-	initConfigPath(*configFile)
+	configFileValue := *configFile
+	projectValue := *project
+	platformTypeValue := *platformType
+	agentTypeValue := *agentType
+	workDirValue := *workDirFlag
+	adminOpenIDValue := strings.TrimSpace(*adminOpenID)
+	appValue := *app
+	appIDValue := *appID
+	appSecretValue := *appSecret
+	noStartValue := *noStart
+	daemonEnvPathValue := *daemonEnvPath
+	autoBindChatsValue := *autoBindChats
+	groupReplyAllValue := *groupReplyAll
+	groupContextBufferValue := *groupContextBuffer
+	shareSessionInChannelValue := *shareSessionInChannel
+	enableFeishuCardValue := *enableFeishuCard
+	setupMode := requestedMode
+
+	initConfigPath(configFileValue)
+	useWizard := shouldUseFeishuSetupWizard(*wizard, *noWizard, len(args))
+	if useWizard {
+		defaults := feishuSetupWizardConfig{
+			ConfigPath:             config.ConfigPath,
+			Mode:                   requestedMode,
+			Project:                projectValue,
+			PlatformType:           platformTypeValue,
+			AppID:                  appIDValue,
+			AppSecret:              appSecretValue,
+			AgentType:              agentTypeValue,
+			WorkDir:                workDirValue,
+			AdminOpenID:            adminOpenIDValue,
+			AutoBindChats:          autoBindChatsValue,
+			GroupReplyAll:          groupReplyAllValue,
+			GroupContextBuffer:     groupContextBufferValue,
+			ShareSessionInChannel:  shareSessionInChannelValue,
+			EnableFeishuCard:       enableFeishuCardValue,
+			InstallAndStartService: !noStartValue,
+		}
+		if appIDValue != "" || appSecretValue != "" || appValue != "" {
+			defaults.Mode = feishuSetupModeBind
+		}
+		if appValue != "" {
+			parsedAppID, parsedAppSecret, err := parseAppPair(appValue)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			defaults.AppID = parsedAppID
+			defaults.AppSecret = parsedAppSecret
+		}
+		wizardResult, err := runFeishuSetupWizard(os.Stdin, os.Stdout, defaults)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		config.ConfigPath = wizardResult.ConfigPath
+		setupMode = wizardResult.Mode
+		projectValue = wizardResult.Project
+		platformTypeValue = wizardResult.PlatformType
+		agentTypeValue = wizardResult.AgentType
+		workDirValue = wizardResult.WorkDir
+		adminOpenIDValue = strings.TrimSpace(wizardResult.AdminOpenID)
+		appValue = ""
+		appIDValue = wizardResult.AppID
+		appSecretValue = wizardResult.AppSecret
+		noStartValue = !wizardResult.InstallAndStartService
+		autoBindChatsValue = wizardResult.AutoBindChats
+		groupReplyAllValue = wizardResult.GroupReplyAll
+		groupContextBufferValue = wizardResult.GroupContextBuffer
+		shareSessionInChannelValue = wizardResult.ShareSessionInChannel
+		enableFeishuCardValue = wizardResult.EnableFeishuCard
+	}
 
 	effectiveMode, resolvedAppID, resolvedAppSecret, err := resolveFeishuSetupInputs(
-		requestedMode,
-		*app,
-		*appID,
-		*appSecret,
+		setupMode,
+		appValue,
+		appIDValue,
+		appSecretValue,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	targetProject, err := resolveTargetProject(*project)
+	targetProject, err := resolveTargetProject(projectValue)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	normalizedType, err := normalizeFeishuPlatformType(*platformType)
+	normalizedType, err := normalizeFeishuPlatformType(platformTypeValue)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -235,11 +320,18 @@ func runFeishuSetup(args []string, requestedMode string) {
 		botOpenID = fetchBotOpenIDForSetup(resolvedAppID, resolvedAppSecret, provisionType)
 		ownerOpenIDForConfig = setupOwnerOpenIDForConfig(ownerOpenID, botOpenID)
 	}
-	workDir := defaultFeishuSetupWorkDir(*project)
+	if adminOpenIDValue != "" {
+		ownerOpenIDForConfig = adminOpenIDValue
+	}
+	workDir := workDirValue
+	if strings.TrimSpace(workDir) == "" {
+		workDir = defaultFeishuSetupWorkDir(projectValue)
+	}
 	provisionResult, err := config.EnsureProjectWithFeishuPlatform(config.EnsureProjectWithFeishuOptions{
 		ProjectName:  targetProject,
 		PlatformType: provisionType,
 		WorkDir:      workDir,
+		AgentType:    agentTypeValue,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: prepare project failed: %v\n", err)
@@ -252,13 +344,18 @@ func runFeishuSetup(args []string, requestedMode string) {
 	}
 
 	saveResult, err := config.SaveFeishuPlatformCredentials(config.FeishuCredentialUpdateOptions{
-		ProjectName:       targetProject,
-		PlatformIndex:     *platformIndex,
-		PlatformType:      finalPlatformType,
-		AppID:             resolvedAppID,
-		AppSecret:         resolvedAppSecret,
-		OwnerOpenID:       ownerOpenIDForConfig,
-		SetAllowFromEmpty: *setAllowFromEmpty,
+		ProjectName:           targetProject,
+		PlatformIndex:         *platformIndex,
+		PlatformType:          finalPlatformType,
+		AppID:                 resolvedAppID,
+		AppSecret:             resolvedAppSecret,
+		OwnerOpenID:           ownerOpenIDForConfig,
+		SetAllowFromEmpty:     *setAllowFromEmpty,
+		AutoBindChats:         optionalSetupBool(useWizard || explicitFlags["auto-bind-chats"], autoBindChatsValue),
+		GroupReplyAll:         optionalSetupBool(useWizard || explicitFlags["group-reply-all"], groupReplyAllValue),
+		GroupContextBuffer:    optionalSetupBool(useWizard || explicitFlags["group-context-buffer"], groupContextBufferValue),
+		ShareSessionInChannel: optionalSetupBool(useWizard || explicitFlags["share-session-in-channel"], shareSessionInChannelValue),
+		EnableFeishuCard:      optionalSetupBool(useWizard || explicitFlags["enable-feishu-card"], enableFeishuCardValue),
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: update config failed: %v\n", err)
@@ -284,14 +381,14 @@ func runFeishuSetup(args []string, requestedMode string) {
 	permissionGuidance := buildFeishuPermissionGuidance(saveResult.PlatformType, resolvedAppID)
 
 	fmt.Println()
-	if *noStart {
+	if noStartValue {
 		workDir := feishuSetupDaemonWorkDir()
 		fmt.Println("Skipped daemon auto-start (--no-start).")
 		fmt.Printf("To run in the foreground: agentchat --config %s\n", config.ConfigPath)
 		fmt.Printf("To install later: agentchat daemon install --work-dir %s --force\n", workDir)
 		fmt.Println()
 	} else {
-		daemonResult, err := installFeishuSetupDaemon(*daemonEnvPath)
+		daemonResult, err := installFeishuSetupDaemon(daemonEnvPathValue)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: config saved but daemon auto-start failed: %v\n", err)
 			fmt.Fprintf(os.Stderr, "After fixing the issue, run: agentchat daemon install --work-dir %s --force\n", feishuSetupDaemonWorkDir())
@@ -316,6 +413,14 @@ func setupOwnerOpenIDForConfig(ownerOpenID, botOpenID string) string {
 		return ""
 	}
 	return ownerOpenID
+}
+
+func optionalSetupBool(enabled bool, value bool) *bool {
+	if !enabled {
+		return nil
+	}
+	v := value
+	return &v
 }
 
 func printAllowFromGuidance(ownerOpenID, botOpenID string, result *config.FeishuCredentialUpdateResult) {
@@ -699,9 +804,21 @@ Options:
   --project <name>            Local bot profile name (default: feishu; auto-created if missing)
   --platform-index <n>        1-based Feishu/Lark platform index in the project (default: first)
   --platform-type <type>      Force platform type: feishu or lark
+  --agent <type>              Agent for an auto-created profile (default: codex; e.g. kimi)
+  --work-dir <path>           Initial workspace for an auto-created profile
+  --admin-open-id <open_id>   Seed admin_from with this Feishu/Lark user open_id
   --app <id:secret>           Existing credentials (recommended for bind/setup)
   --app-id <id>               Existing app_id
   --app-secret <secret>       Existing app_secret
+  --wizard                    Run the interactive setup wizard
+  --no-wizard                 Skip the interactive setup wizard
+  --auto-bind-chats=false     Disable admin auto-binding for new private/group chats
+  --group-reply-all           Respond to every group message instead of only mentions
+  --group-context-buffer=false
+                              Disable recent group history as background context
+  --share-session-in-channel=false
+                              Use separate sessions per sender in a group chat
+  --enable-feishu-card=false  Disable Feishu interactive progress cards
   --apply                     Request tenant permission approval via OpenAPI
   --timeout <seconds>         QR onboarding timeout (default: 600)
   --qr-image <path>           Save QR code as PNG image file (e.g. --qr-image qr.png)
@@ -713,7 +830,9 @@ Options:
 Examples:
   # Recommended top-level command
   agentchat setup feishu
+  agentchat setup feishu --wizard
   agentchat setup feishu --app cli_xxx:sec_xxx
+  agentchat setup feishu --wizard --agent kimi --no-start
 
   # Compatibility command group: same setup flow
   agentchat feishu setup
@@ -792,11 +911,15 @@ func resolveTargetProject(project string) (string, error) {
 }
 
 func defaultFeishuSetupWorkDir(project string) string {
+	return defaultFeishuSetupWorkDirForConfig(config.ConfigPath, project)
+}
+
+func defaultFeishuSetupWorkDirForConfig(configPath, project string) string {
 	if strings.TrimSpace(project) != "" {
 		workDir, _ := os.Getwd()
 		return workDir
 	}
-	dir := filepath.Dir(config.ConfigPath)
+	dir := filepath.Dir(configPath)
 	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
 	}

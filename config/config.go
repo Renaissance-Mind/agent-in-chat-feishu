@@ -1401,13 +1401,18 @@ func GetProjectProviders(projectName string) ([]ProviderConfig, string, error) {
 // FeishuCredentialUpdateOptions controls how Feishu/Lark platform credentials
 // are written back into config.toml for a specific project.
 type FeishuCredentialUpdateOptions struct {
-	ProjectName       string // required
-	PlatformIndex     int    // 1-based index among feishu/lark platforms in the project; 0 = first
-	PlatformType      string // optional target type: "feishu" or "lark"; empty keeps existing type
-	AppID             string // required
-	AppSecret         string // required
-	OwnerOpenID       string // optional owner id from onboarding flow
-	SetAllowFromEmpty bool   // when true, seed/append allow_from with OwnerOpenID while preserving "*"
+	ProjectName           string // required
+	PlatformIndex         int    // 1-based index among feishu/lark platforms in the project; 0 = first
+	PlatformType          string // optional target type: "feishu" or "lark"; empty keeps existing type
+	AppID                 string // required
+	AppSecret             string // required
+	OwnerOpenID           string // optional owner id from onboarding flow
+	SetAllowFromEmpty     bool   // when true, seed/append allow_from with OwnerOpenID while preserving "*"
+	AutoBindChats         *bool  // optional setup override for auto_bind_chats
+	GroupReplyAll         *bool  // optional setup override for group_reply_all
+	GroupContextBuffer    *bool  // optional setup override for group_context_buffer
+	ShareSessionInChannel *bool  // optional setup override for share_session_in_channel
+	EnableFeishuCard      *bool  // optional setup override for enable_feishu_card
 }
 
 // EnsureProjectWithFeishuOptions controls project auto-provisioning for Feishu/Lark setup.
@@ -1783,6 +1788,26 @@ func SaveFeishuPlatformCredentials(opts FeishuCredentialUpdateOptions) (*FeishuC
 	span = reloadSpan()
 	lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "app_secret", strings.TrimSpace(opts.AppSecret))
 	span = reloadSpan()
+	if opts.AutoBindChats != nil {
+		lines = upsertTomlRawKey(lines, span.optionsStart+1, span.optionsEnd, "auto_bind_chats", formatTomlBool(*opts.AutoBindChats))
+		span = reloadSpan()
+	}
+	if opts.GroupReplyAll != nil {
+		lines = upsertTomlRawKey(lines, span.optionsStart+1, span.optionsEnd, "group_reply_all", formatTomlBool(*opts.GroupReplyAll))
+		span = reloadSpan()
+	}
+	if opts.ShareSessionInChannel != nil {
+		lines = upsertTomlRawKey(lines, span.optionsStart+1, span.optionsEnd, "share_session_in_channel", formatTomlBool(*opts.ShareSessionInChannel))
+		span = reloadSpan()
+	}
+	if opts.GroupContextBuffer != nil {
+		lines = upsertTomlRawKey(lines, span.optionsStart+1, span.optionsEnd, "group_context_buffer", formatTomlBool(*opts.GroupContextBuffer))
+		span = reloadSpan()
+	}
+	if opts.EnableFeishuCard != nil {
+		lines = upsertTomlRawKey(lines, span.optionsStart+1, span.optionsEnd, "enable_feishu_card", formatTomlBool(*opts.EnableFeishuCard))
+		span = reloadSpan()
+	}
 	if opts.SetAllowFromEmpty && strings.TrimSpace(opts.OwnerOpenID) != "" {
 		lines = upsertTomlStringKey(lines, span.optionsStart+1, span.optionsEnd, "allow_from", allowFrom)
 		_ = reloadSpan()
@@ -2538,6 +2563,13 @@ func upsertTomlRawKey(lines []string, start, end int, key, rawValue string) []st
 		insertAt = start
 	}
 	return insertLines(lines, insertAt, []string{fmt.Sprintf("%s = %s", key, rawValue)})
+}
+
+func formatTomlBool(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func quoteTomlString(value string) string {

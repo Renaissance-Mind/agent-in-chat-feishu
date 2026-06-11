@@ -46,6 +46,8 @@ Targets:
 
 Examples:
   agentchat setup feishu
+  agentchat setup feishu --wizard
+  agentchat setup feishu --wizard --agent kimi --no-start
   agentchat setup feishu --app cli_xxx:sec_xxx
   agentchat setup feishu --no-start`)
 }

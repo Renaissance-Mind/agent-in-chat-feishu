@@ -80,6 +80,107 @@ func TestSetupOwnerOpenIDForConfigKeepsUserOpenID(t *testing.T) {
 	}
 }
 
+func TestFeishuSetupWizardCollectsKimiBindConfig(t *testing.T) {
+	input := strings.NewReader(strings.Join([]string{
+		"",             // config file
+		"connect",      // bot setup mode
+		"cli_kimi",     // app id
+		"sec_kimi",     // app secret
+		"feishu",       // platform
+		"kimi-profile", // local profile
+		"kimi",         // agent
+		"/tmp/kimi",    // initial workspace
+		"ou_admin",     // admin open_id
+		"",             // auto-bind chats
+		"",             // group trigger mode
+		"",             // include group history
+		"",             // share group session
+		"",             // progress cards
+		"no",           // install/start service
+		"yes",          // confirm
+	}, "\n") + "\n")
+
+	got, err := runFeishuSetupWizard(input, io.Discard, feishuSetupWizardConfig{
+		ConfigPath:             "/tmp/agentchat/config.toml",
+		Mode:                   feishuSetupModeNew,
+		Project:                defaultFeishuProject,
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+	if err != nil {
+		t.Fatalf("runFeishuSetupWizard returned error: %v", err)
+	}
+	if got.Mode != feishuSetupModeBind {
+		t.Fatalf("Mode = %q, want %q", got.Mode, feishuSetupModeBind)
+	}
+	if got.AppID != "cli_kimi" || got.AppSecret != "sec_kimi" {
+		t.Fatalf("credentials = (%q, %q), want kimi credentials", got.AppID, got.AppSecret)
+	}
+	if got.PlatformType != "feishu" {
+		t.Fatalf("PlatformType = %q, want feishu", got.PlatformType)
+	}
+	if got.Project != "kimi-profile" {
+		t.Fatalf("Project = %q, want kimi-profile", got.Project)
+	}
+	if got.AgentType != "kimi" {
+		t.Fatalf("AgentType = %q, want kimi", got.AgentType)
+	}
+	if got.WorkDir != "/tmp/kimi" {
+		t.Fatalf("WorkDir = %q, want /tmp/kimi", got.WorkDir)
+	}
+	if got.AdminOpenID != "ou_admin" {
+		t.Fatalf("AdminOpenID = %q, want ou_admin", got.AdminOpenID)
+	}
+	if !got.AutoBindChats || got.GroupReplyAll || !got.GroupContextBuffer || !got.ShareSessionInChannel || !got.EnableFeishuCard {
+		t.Fatalf("unexpected defaults: %+v", got)
+	}
+	if got.InstallAndStartService {
+		t.Fatalf("InstallAndStartService = true, want false")
+	}
+}
+
+func TestFeishuSetupWizardDefaultsWorkspaceNextToConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+	input := strings.NewReader(strings.Join([]string{
+		"",    // config file
+		"",    // bot setup mode
+		"",    // platform
+		"",    // local profile
+		"",    // agent
+		"",    // initial workspace
+		"",    // admin open_id
+		"",    // auto-bind chats
+		"",    // group trigger mode
+		"",    // include group history
+		"",    // share group session
+		"",    // progress cards
+		"no",  // install/start service
+		"yes", // confirm
+	}, "\n") + "\n")
+
+	got, err := runFeishuSetupWizard(input, io.Discard, feishuSetupWizardConfig{
+		ConfigPath:             configPath,
+		Mode:                   feishuSetupModeNew,
+		AgentType:              "codex",
+		AutoBindChats:          true,
+		GroupContextBuffer:     true,
+		ShareSessionInChannel:  true,
+		EnableFeishuCard:       true,
+		InstallAndStartService: true,
+	})
+	if err != nil {
+		t.Fatalf("runFeishuSetupWizard returned error: %v", err)
+	}
+	if got.WorkDir != filepath.Join(dir, defaultFeishuProject) {
+		t.Fatalf("WorkDir = %q, want default next to config", got.WorkDir)
+	}
+}
+
 func TestResolveTargetProjectDefaultsToFeishu(t *testing.T) {
 	dir := t.TempDir()
 	prev := config.ConfigPath
