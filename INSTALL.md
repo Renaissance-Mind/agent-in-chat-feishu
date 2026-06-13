@@ -7,7 +7,7 @@
 ## 1. Install
 
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu@latest
+npm install -g agent-in-chat-feishu@latest
 agentchat --help
 ```
 

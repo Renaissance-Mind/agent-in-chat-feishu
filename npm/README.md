@@ -5,7 +5,7 @@ Run local AI coding agents inside Feishu/Lark chat loops.
 ## Install
 
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu
+npm install -g agent-in-chat-feishu@latest && agentchat setup feishu
 ```
 
 The main package installs the matching platform binary from npm optional dependencies.

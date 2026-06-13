@@ -21,7 +21,7 @@ Put Codex, Claude Code, and other coding agents into the Feishu chat loop your t
 
 ## 🌟 Highlights
 
-- 🚀 Foolproof out-of-the-box setup: install and create a bot with one command `npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu`
+- 🚀 Foolproof out-of-the-box setup: install and create a bot with one command `npm install -g agent-in-chat-feishu@latest && agentchat setup feishu`
 - 🤖 Multiple bots can coexist: the bot can see messages from other bots
 - 🧠 Full context: non-@ messages also enter the context, and execution is triggered when the bot is @mentioned
 - 🍎 Currently tested mainly on macOS + Codex
@@ -72,7 +72,7 @@ Setup connects the bot to your local Codex CLI by default. Before running it, ma
 For a new user, install the CLI and start the guided Feishu/Lark setup in one command:
 
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu
+npm install -g agent-in-chat-feishu@latest && agentchat setup feishu
 ```
 
 If the package is already installed, run only:

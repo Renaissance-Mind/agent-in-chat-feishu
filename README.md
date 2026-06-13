@@ -21,7 +21,7 @@
 
 ## 🌟 Highlights
 
-- 🚀 傻瓜式开箱即用：一行命令安装并创建机器人 `npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu`
+- 🚀 傻瓜式开箱即用：一行命令安装并创建机器人 `npm install -g agent-in-chat-feishu@latest && agentchat setup feishu`
 - 🤖 多机器人共存：机器人可以看到其他机器人消息
 - 🧠 全量上下文：非 @ 消息也会进入上下文，在 @ 机器人时触发执行
 - 🍎 目前主要在 macOS + Codex 环境下被测试
@@ -72,7 +72,7 @@ Alex：看下最近配置和日志，告诉我们怎么修。
 首次安装并开始配置飞书机器人，只需要一句命令：
 
 ```bash
-npm install -g @renaissancemind/agent-in-chat-feishu@latest && agentchat setup feishu
+npm install -g agent-in-chat-feishu@latest && agentchat setup feishu
 ```
 
 如果已经安装过 npm 包，只需要运行：
